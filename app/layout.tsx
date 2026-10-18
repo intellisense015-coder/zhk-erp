@@ -7,11 +7,11 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "Solexa by Intellisense | Inventory ERP",
-  description: "A modern inventory and trading workspace for gadget resellers.",
+  description: "A modern inventory and sales workspace for gadget resellers.",
   icons: {
-    icon: "/solexa-logo.jpeg",
-    shortcut: "/solexa-logo.jpeg",
-    apple: "/solexa-logo.jpeg",
+    icon: "/solexa-logo.png",
+    shortcut: "/solexa-logo.png",
+    apple: "/solexa-logo.png",
   },
 };
 

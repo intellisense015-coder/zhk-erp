@@ -2,18 +2,18 @@
 
 import { Children, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ChangeEventHandler, type ClipboardEventHandler, type InputHTMLAttributes, type SelectHTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, Search } from "lucide-react";
 import { cn } from "./dialog";
 
 export { Button } from "./button";
 export { ConfirmDialog, Dialog, Modal, cn } from "./dialog";
 export type { ModalProps } from "./dialog";
 
-type FieldProps = InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string; textOnly?: boolean; numberOnly?: boolean };
+type FieldProps = InputHTMLAttributes<HTMLInputElement> & { label?: string; hint?: string; textOnly?: boolean; numberOnly?: boolean };
 
 export function Field({ label, hint, className = "", textOnly = false, numberOnly = false, onChange, onPaste, type, ...props }: FieldProps) {
-  const inferredTextOnly = textOnly || ["Business name", "Customer name", "Supplier name", "New vendor name"].includes(label);
-  const inferredNumberOnly = numberOnly || /contact/i.test(label);
+  const inferredTextOnly = textOnly || ["Business name", "Customer name", "Supplier name", "New supplier name", "Full name"].includes(label ?? "");
+  const inferredNumberOnly = numberOnly || /contact/i.test(label ?? "");
   const isNumberInput = inferredNumberOnly || type === "number";
   const sanitize = (value: string) => {
     if (inferredTextOnly) return value.replace(/\d/g, "");
@@ -34,7 +34,7 @@ export function Field({ label, hint, className = "", textOnly = false, numberOnl
   return <label className={cn("block", className)}>{label ? <span className="mb-2 block text-[10px] font-semibold text-[var(--text-primary)]">{label}</span> : null}<input className="floating-input h-11 w-full rounded-[14px] px-4 text-[10px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" type={type} onChange={handleChange} onPaste={handlePaste} {...props} />{hint ? <span className="mt-1.5 block text-[10px] text-[var(--error)]">{hint}</span> : null}</label>;
 }
 
-type SelectFieldProps = SelectHTMLAttributes<HTMLSelectElement> & { label: string; hint?: string; searchable?: boolean; searchPlaceholder?: string; children: ReactNode };
+type SelectFieldProps = SelectHTMLAttributes<HTMLSelectElement> & { label?: string; hint?: string; searchable?: boolean; searchPlaceholder?: string; children: ReactNode };
 type OptionProps = { value?: string | number; children?: ReactNode };
 
 export function SelectField({ label, hint, className = "", children, searchable = false, searchPlaceholder = "Search...", ...props }: SelectFieldProps) {
@@ -48,7 +48,7 @@ export function SelectField({ label, hint, className = "", children, searchable 
   const menuRef = useRef<HTMLDivElement>(null);
   const selectedValue = value !== undefined ? String(value) : internalValue;
   const selected = options.find((option) => option.value === selectedValue);
-  const visibleOptions = searchable ? options.filter((option) => String(option.label).toLowerCase().includes(query.toLowerCase())) : options;
+  const visibleOptions = searchable ? options.filter((option) => `${option.value} ${String(option.label)}`.toLowerCase().includes(query.toLowerCase())) : options;
 
   const updatePosition = () => {
     const trigger = triggerRef.current;
@@ -77,13 +77,13 @@ export function SelectField({ label, hint, className = "", children, searchable 
     setOpen(false);
   };
 
-  const menu = open && typeof document !== "undefined" ? createPortal(<div ref={menuRef} className="custom-select-menu" style={{ top: position.top, left: position.left, width: position.width }} role="listbox" aria-label={ariaLabel || label}>{searchable && <label className="custom-select-search"><Search size={13} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchPlaceholder} aria-label={searchPlaceholder} /></label>}{visibleOptions.map((option) => <button type="button" role="option" aria-selected={selectedValue === option.value} className={cn("custom-select-option", selectedValue === option.value && "is-selected")} key={option.value} onClick={() => selectOption(option.value)}>{option.label}<span className="custom-select-check">{selectedValue === option.value ? <Check size={13} /> : null}</span></button>)}{!visibleOptions.length && <p className="custom-select-empty">No options available</p>}</div>, document.body) : null;
+  const menu = open && typeof document !== "undefined" ? createPortal(<div ref={menuRef} className="custom-select-menu" style={{ top: position.top, left: position.left, width: position.width }} role="listbox" aria-label={ariaLabel || label || "Select an option"}>{searchable && <label className="custom-select-search"><Search size={13} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchPlaceholder} aria-label={searchPlaceholder} /></label>}{visibleOptions.map((option) => <button type="button" role="option" aria-selected={selectedValue === option.value} className={cn("custom-select-option", selectedValue === option.value && "is-selected")} key={option.value} onClick={() => selectOption(option.value)}>{option.label}<span className="custom-select-check">{selectedValue === option.value ? <Check size={13} /> : null}</span></button>)}{!visibleOptions.length && <p className="custom-select-empty">No options available</p>}</div>, document.body) : null;
 
-  return <label className="modal-field"><span className="modal-field-label">{label}</span><button ref={triggerRef} type="button" className={cn("custom-select-trigger", className, hint && "has-error")} onClick={() => { setOpen((current) => !current); setQuery(""); requestAnimationFrame(updatePosition); }} aria-expanded={open} aria-haspopup="listbox" aria-label={ariaLabel || label} disabled={disabled}>{selected?.label || options[0]?.label || "Select an option"}<ChevronDown size={14} className={cn("custom-select-chevron", open && "is-open")} /></button>{menu}<span className={hint ? "modal-field-hint" : "modal-field-hint modal-field-hint-empty"}>{hint || " "}</span></label>;
+  return <label className="modal-field">{label ? <span className="modal-field-label">{label}</span> : null}<button ref={triggerRef} type="button" className={cn("custom-select-trigger", className, hint && "has-error")} onClick={() => { setOpen((current) => !current); setQuery(""); requestAnimationFrame(updatePosition); }} aria-expanded={open} aria-haspopup="listbox" aria-label={ariaLabel || label || "Select an option"} disabled={disabled}>{selected?.label || options[0]?.label || "Select an option"}<ChevronDown size={14} className={cn("custom-select-chevron", open && "is-open")} /></button>{menu}<span className={hint ? "modal-field-hint" : "modal-field-hint modal-field-hint-empty"}>{hint || " "}</span></label>;
 }
 
 export function DateField({ label, hint, ...props }: FieldProps) {
-  return <Field label={label} hint={hint} type="date" {...props} />;
+  return <label className="modal-field block">{label ? <span className="modal-field-label">{label}</span> : null}<span className="relative block"><CalendarDays size={15} aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" /><input className="floating-input h-11 w-full rounded-[14px] px-10 pr-4 text-[10px] text-[var(--text-primary)] outline-none" type="date" {...props} /></span>{hint ? <span className="modal-field-hint">{hint}</span> : <span className="modal-field-hint modal-field-hint-empty"> </span>}</label>;
 }
 
 export function TimeField({ label, hint, ...props }: FieldProps) {

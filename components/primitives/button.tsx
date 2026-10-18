@@ -1,22 +1,24 @@
 "use client";
 
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { forwardRef, type ComponentProps, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
+import { motion } from "motion/react";
 import { cn } from "./dialog";
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger" | "brand";
+type ButtonProps = Omit<ComponentProps<typeof motion.button>, "ref" | "children"> & {
+  variant?: "primary" | "secondary" | "ghost" | "danger" | "brand" | "soft";
   loading?: boolean;
-  children: ReactNode;
+  children?: ReactNode;
 };
 
-export function Button({ variant = "primary", loading = false, disabled, className, children, ...props }: ButtonProps) {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({ variant = "soft", loading = false, disabled, className, children, ...props }, ref) {
   const variants = {
-    primary: "primitive-btn primitive-btn-primary",
-    brand: "primitive-btn primitive-btn-primary",
-    secondary: "primitive-btn primitive-btn-secondary",
+    primary: "primitive-btn brand-button",
+    brand: "primitive-btn brand-button",
+    secondary: "primitive-btn soft-button",
+    soft: "primitive-btn soft-button",
     ghost: "primitive-btn primitive-btn-ghost",
     danger: "primitive-btn primitive-btn-danger",
   };
-  return <button className={cn(variants[variant], className)} disabled={disabled || loading} {...props}>{loading && <LoaderCircle size={15} className="animate-spin" />}{children}</button>;
-}
+  return <motion.button ref={ref} whileHover={{ y: -2, scale: 1.01 }} whileTap={{ y: 0, scale: 0.985 }} transition={{ duration: 0.55 }} className={cn(variants[variant], className)} disabled={disabled || loading} {...props}>{loading && <LoaderCircle size={16} className="animate-spin" />}{children}</motion.button>;
+});

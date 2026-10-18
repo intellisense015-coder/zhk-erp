@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  async redirects() {
+    return [{ source: "/", destination: "/splash", permanent: false }];
+  },
   experimental: {
     agentFeedback: true,
   },
@@ -9,7 +12,7 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   turbopack: {
     rules: {
-      "*.css": {
+      "app/globals.css": {
         loaders: ["@tailwindcss/turbopack"],
         as: "*.css",
       },

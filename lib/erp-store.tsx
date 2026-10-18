@@ -1,8 +1,8 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Customer, Product, SaleLineItem, Supplier, SupplierPayment, Transaction } from "./erp-data";
-import type { ProductFormValues, PurchaseFormValues, SaleFormValues } from "./validations";
+import { productBrands, type Customer, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from "./erp-data";
+import type { ExchangeFormValues, ProductFormValues, PurchaseFormValues, SaleFormValues } from "./validations";
 
 // v2 intentionally starts with a clean workspace so the former demo snapshot
 // cannot reappear as real business data. Records created in this version persist
@@ -14,15 +14,16 @@ type StoreContextValue = StoreData & {
   addProduct: (values: ProductFormValues) => { ok: true } | { ok: false; message: string };
   updateProduct: (id: string, values: ProductFormValues) => { ok: true } | { ok: false; message: string };
   deleteProduct: (id: string) => void;
-  addCustomer: (values: { name: string; contactNumber: string }) => { ok: true; customer: Customer } | { ok: false; message: string };
-  updateCustomer: (id: string, values: { name: string; contactNumber: string }) => { ok: true } | { ok: false; message: string };
+  addCustomer: (values: { name: string; contactNumber: string; gender?: string; cnicNumber?: string }) => { ok: true; customer: Customer } | { ok: false; message: string };
+  updateCustomer: (id: string, values: { name: string; contactNumber: string; gender?: string; cnicNumber?: string }) => { ok: true } | { ok: false; message: string };
   deleteCustomer: (id: string) => void;
-  addSupplier: (values: { name: string; contactNumber: string; company?: string }) => { ok: true; supplier: Supplier } | { ok: false; message: string };
-  updateSupplier: (id: string, values: { name: string; contactNumber: string; company?: string }) => { ok: true } | { ok: false; message: string };
+  addSupplier: (values: { name: string; contactNumber: string; company?: string; cnicNumber?: string; openingBalance?: number }) => { ok: true; supplier: Supplier } | { ok: false; message: string };
+  updateSupplier: (id: string, values: { name: string; contactNumber: string; company?: string; cnicNumber?: string; openingBalance?: number }) => { ok: true } | { ok: false; message: string };
   deleteSupplier: (id: string) => void;
   addPurchase: (values: PurchaseFormValues) => { ok: true } | { ok: false; message: string };
   updatePurchase: (id: string, values: { quantity: number; unitCost: number }) => { ok: true } | { ok: false; message: string };
   addSale: (values: SaleFormValues) => { ok: true } | { ok: false; message: string };
+  addExchange: (values: ExchangeFormValues) => { ok: true } | { ok: false; message: string };
   addSupplierPayment: (values: { supplierId: string; amount: number; note?: string }) => { ok: true } | { ok: false; message: string };
   addTransfer: (values: { transferKind: "supplier-to-customer" | "customer-to-customer"; fromEntity: string; toEntity: string; productId: string; quantity: number; amount: number }) => { ok: true } | { ok: false; message: string };
   updateSale: (id: string, values: { customerName: string; items: SaleLineItem[] }) => { ok: true } | { ok: false; message: string };
@@ -33,6 +34,14 @@ const StoreContext = createContext<StoreContextValue | null>(null);
 
 function makeId(prefix: string) {
   return `${prefix}-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+}
+
+function normalizeProductName(product: Partial<Product>) {
+  const brand = productBrands.find((item) => item.value === product.brand);
+  const model = product.model?.trim();
+  if (!brand || brand.value === "other" || !model) return product.name ?? "Unnamed product";
+  const cleanModel = model.replace(new RegExp(`^${brand.label}\\s+`, "i"), "");
+  return `${brand.label} ${cleanModel}`.trim();
 }
 
 function getDateParts() {
@@ -59,20 +68,42 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         const stored = window.localStorage.getItem(STORAGE_KEY);
         if (stored) {
           const parsed = JSON.parse(stored) as Partial<StoreData>;
-          const products = Array.isArray(parsed.products) ? parsed.products.map((product) => ({ ...product, vendorName: product.vendorName ?? "Unassigned" })) : [];
+          const products = Array.isArray(parsed.products) ? parsed.products.map((product) => { const normalized = { ...product, brand: product.brand ?? "other", model: product.model ?? product.name, color: product.color?.trim() || "Unspecified", vendorName: product.vendorName ?? "Unassigned" }; return { ...normalized, name: normalizeProductName(normalized) }; }) : [];
           const customers = Array.isArray(parsed.customers) ? (parsed.customers as Array<Customer & { accountNumber?: string }>).map((customer, index, source) => ({ ...customer, code: makeUniqueCustomerCode(customer.code ?? customer.accountNumber ?? `CUST-${String(index + 1).padStart(3, "0")}`, source.slice(0, index).map((item) => ({ ...item, code: item.code ?? item.accountNumber ?? "" })) as Customer[]) })) : [];
-          const parsedSuppliers = Array.isArray(parsed.suppliers) ? (parsed.suppliers as Array<Partial<Supplier>>).map((supplier) => ({ id: supplier.id ?? makeId("supplier"), name: supplier.name ?? "Unnamed supplier", contactNumber: supplier.contactNumber ?? "", company: supplier.company ?? "", createdAt: supplier.createdAt ?? new Date().toISOString() })) : [];
+          const parsedSuppliers = Array.isArray(parsed.suppliers) ? (parsed.suppliers as Array<Partial<Supplier>>).map((supplier) => ({ id: supplier.id ?? makeId("supplier"), name: supplier.name ?? "Unnamed supplier", contactNumber: supplier.contactNumber ?? "", company: supplier.company ?? "", cnicNumber: supplier.cnicNumber ?? "", openingBalance: typeof supplier.openingBalance === "number" && Number.isFinite(supplier.openingBalance) ? Math.max(supplier.openingBalance, 0) : 0, createdAt: supplier.createdAt ?? new Date().toISOString() })) : [];
           const rawTransactions = Array.isArray(parsed.transactions) ? parsed.transactions.map((transaction) => ({ ...transaction, customerCode: transaction.customerCode ?? transaction.customerAccountNumber, items: transaction.items?.map((item) => ({ ...item, discount: item.discount ?? 0 })) })) : [];
           const suppliers = [...parsedSuppliers];
           const transactions = rawTransactions.map((transaction) => {
             if (transaction.type !== "purchase") return transaction;
             const existing = suppliers.find((supplier) => supplier.id === transaction.supplierId || supplier.name.toLowerCase() === transaction.party.toLowerCase());
             if (existing) return { ...transaction, supplierId: existing.id };
-            const supplier = { id: transaction.supplierId ?? makeId("supplier"), name: transaction.party, contactNumber: transaction.supplierContactNumber ?? "", company: transaction.supplierCompany ?? "", createdAt: new Date().toISOString() };
+            const supplier = { id: transaction.supplierId ?? makeId("supplier"), name: transaction.party, contactNumber: transaction.supplierContactNumber ?? "", company: transaction.supplierCompany ?? "", cnicNumber: "", openingBalance: 0, createdAt: new Date().toISOString() };
             suppliers.push(supplier);
             return { ...transaction, supplierId: supplier.id };
           });
-          setData({ products, transactions, customers, suppliers, supplierPayments: Array.isArray(parsed.supplierPayments) ? parsed.supplierPayments : [] });
+          // Older inventory entries stored stock and its supplier on the product,
+          // but did not create a purchase transaction. Import that stock once so
+          // supplier purchase totals remain accurate after the data model change.
+          const migratedPurchases: Transaction[] = products.flatMap((product) => {
+            const vendorName = product.vendorName?.trim();
+            const supplier = suppliers.find((item) => item.name.trim().toLowerCase() === vendorName?.toLowerCase());
+            const received = Number(product.received ?? product.inStockQuantity ?? 0);
+            const unitCost = Number(product.costPrice ?? 0);
+            if (!supplier || !vendorName || vendorName.toLowerCase() === "unassigned" || received <= 0 || unitCost <= 0) return [];
+            const recordedQuantity = transactions
+              .filter((transaction) => transaction.type === "purchase" && transaction.productId === product.id && transaction.supplierId === supplier.id)
+              .reduce((sum, transaction) => sum + transaction.quantity, 0);
+            const quantity = Math.max(received - recordedQuantity, 0);
+            if (!quantity) return [];
+            const total = quantity * unitCost;
+            const createdAt = new Date().toISOString();
+            const { date, month } = getDateParts();
+            return [{ id: makeId("purchase"), type: "purchase", source: "supplier", name: product.name, productId: product.id, unitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity, amount: total, paidAmount: 0, outstandingAmount: total, time: "Imported from inventory", createdAt, date, month }];
+          });
+          const nextTransactions = [...migratedPurchases, ...transactions];
+          const nextData = { products, transactions: nextTransactions, customers, suppliers, supplierPayments: Array.isArray(parsed.supplierPayments) ? parsed.supplierPayments : [] };
+          setData(nextData);
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextData));
         }
       } catch {
         window.localStorage.removeItem(STORAGE_KEY);
@@ -92,26 +123,68 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
   const normalizeCode = (value: string) => value.trim().toUpperCase().replace(/\s+/g, "");
   const normalizeName = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
   const normalizeSku = (value: string) => value.trim().toUpperCase().replace(/\s+/g, "");
+  const ownerContact = typeof window !== "undefined" ? (() => {
+    try {
+      const profile = JSON.parse(window.localStorage.getItem("solexa-business-profile") || "null") as { contactNumber?: string } | null;
+      return normalizeContact(profile?.contactNumber ?? "");
+    } catch {
+      return "";
+    }
+  })() : "";
 
   const value = useMemo<StoreContextValue>(() => ({
     ...data,
     hydrated,
     addProduct: (values) => {
-      const name = values.name.trim();
-      const sku = normalizeSku(values.sku);
-      if (data.products.some((product) => normalizeName(product.name) === normalizeName(name))) return { ok: false, message: "A product with this name already exists." };
+      const brand = values.brand.trim();
+      const model = values.model.trim();
+      const color = values.color.trim();
+      const name = values.name.trim() || `${brand} ${model}`.trim();
+      const sku = normalizeSku(values.sku || `${brand}-${model}-${color}-SKU`);
+      if (data.products.some((product) => normalizeName(product.name) === normalizeName(name) && normalizeName(product.color ?? "Unspecified") === normalizeName(color))) return { ok: false, message: "A product with this model and color already exists." };
       if (data.products.some((product) => normalizeSku(product.sku) === sku)) return { ok: false, message: "A product with this SKU already exists." };
-      const existingSupplier = data.suppliers.find((supplier) => normalizeName(supplier.name) === normalizeName(values.vendorName));
-      const supplier = existingSupplier ?? { id: makeId("supplier"), name: values.vendorName.trim(), contactNumber: "", company: "", createdAt: new Date().toISOString() };
-      commit({ ...data, products: [...data.products, { ...values, name, sku, vendorName: supplier.name, id: makeId("product"), sold: 0, received: values.inStockQuantity }], suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
+      const vendorName = values.vendorName.trim();
+      const vendorContact = normalizeContact(values.vendorContactNumber);
+      const vendorCompany = values.vendorCompany?.trim() ?? "";
+      const existingSupplier = data.suppliers.find((supplier) => normalizeName(supplier.name) === normalizeName(vendorName));
+      if (!existingSupplier && !vendorContact) return { ok: false, message: "A contact number is required for a new supplier." };
+      if (!existingSupplier && ownerContact && ownerContact === vendorContact) return { ok: false, message: "The business owner's number cannot be used as a supplier contact." };
+      if (!existingSupplier && data.suppliers.some((supplier) => supplier.contactNumber === vendorContact)) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
+      if (!existingSupplier && data.customers.some((customer) => customer.contactNumber === vendorContact)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
+      const supplier = existingSupplier ?? { id: makeId("supplier"), name: vendorName, contactNumber: vendorContact, company: vendorCompany, createdAt: new Date().toISOString() };
+      const productId = makeId("product");
+      const product = { ...values, name, sku, brand, model, color, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company, id: productId, sold: 0, received: values.inStockQuantity };
+      const createdAt = new Date().toISOString();
+      const { date, month } = getDateParts();
+      const total = values.inStockQuantity * values.costPrice;
+      const purchaseTransaction: Transaction | null = values.inStockQuantity > 0 ? { id: makeId("purchase"), type: "purchase", source: "supplier", name: product.name, productId, unitCost: values.costPrice, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: values.inStockQuantity, amount: total, paidAmount: 0, outstandingAmount: total, time: "Just now", createdAt, date, month } : null;
+      commit({ ...data, products: [...data.products, product], transactions: purchaseTransaction ? [purchaseTransaction, ...data.transactions] : data.transactions, suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
       return { ok: true };
     },
     updateProduct: (id, values) => {
-      const duplicate = data.products.find((product) => product.id !== id && (normalizeName(product.name) === normalizeName(values.name) || normalizeSku(product.sku) === normalizeSku(values.sku)));
-      if (duplicate) return { ok: false, message: "Another product already uses this name or SKU." };
-      const existingSupplier = data.suppliers.find((supplier) => normalizeName(supplier.name) === normalizeName(values.vendorName));
-      const supplier = existingSupplier ?? { id: makeId("supplier"), name: values.vendorName.trim(), contactNumber: "", company: "", createdAt: new Date().toISOString() };
-      commit({ ...data, products: data.products.map((product) => product.id === id ? { ...product, ...values, name: values.name.trim(), sku: normalizeSku(values.sku), vendorName: supplier.name } : product), suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
+      const brand = values.brand.trim();
+      const model = values.model.trim();
+      const color = values.color.trim();
+      const name = values.name.trim() || `${brand} ${model}`.trim();
+      const sku = normalizeSku(values.sku || `${brand}-${model}-${color}-SKU`);
+      const duplicate = data.products.find((product) => product.id !== id && ((normalizeName(product.name) === normalizeName(name) && normalizeName(product.color ?? "Unspecified") === normalizeName(color)) || normalizeSku(product.sku) === sku));
+      if (duplicate) return { ok: false, message: "Another product already uses this model/color or SKU." };
+      const vendorName = values.vendorName.trim();
+      const vendorContact = normalizeContact(values.vendorContactNumber);
+      const vendorCompany = values.vendorCompany?.trim() ?? "";
+      const existingSupplier = data.suppliers.find((supplier) => normalizeName(supplier.name) === normalizeName(vendorName));
+      if (!existingSupplier && !vendorContact) return { ok: false, message: "A contact number is required for a new supplier." };
+      if (!existingSupplier && ownerContact && ownerContact === vendorContact) return { ok: false, message: "The business owner's number cannot be used as a supplier contact." };
+      if (!existingSupplier && data.suppliers.some((supplier) => supplier.contactNumber === vendorContact)) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
+      if (!existingSupplier && data.customers.some((customer) => customer.contactNumber === vendorContact)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
+      const supplier = existingSupplier ?? { id: makeId("supplier"), name: vendorName, contactNumber: vendorContact, company: vendorCompany, createdAt: new Date().toISOString() };
+      const existingProduct = data.products.find((product) => product.id === id);
+      const stockIncrease = Math.max(values.inStockQuantity - (existingProduct?.inStockQuantity ?? 0), 0);
+      const createdAt = new Date().toISOString();
+      const { date, month } = getDateParts();
+      const total = stockIncrease * values.costPrice;
+      const purchaseTransaction: Transaction | null = stockIncrease > 0 ? { id: makeId("purchase"), type: "purchase", source: "supplier", name, productId: id, unitCost: values.costPrice, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: stockIncrease, amount: total, paidAmount: 0, outstandingAmount: total, time: "Just now", createdAt, date, month } : null;
+      commit({ ...data, products: data.products.map((product) => product.id === id ? { ...product, ...values, name, sku, brand, model, color, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company } : product), transactions: purchaseTransaction ? [purchaseTransaction, ...data.transactions] : data.transactions, suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
       return { ok: true };
     },
     deleteProduct: (id) => {
@@ -121,18 +194,20 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const name = values.name.trim();
       const contactNumber = normalizeContact(values.contactNumber);
       if (!name || !contactNumber) return { ok: false, message: "Customer name and contact number are required." };
+      if (ownerContact && ownerContact === contactNumber) return { ok: false, message: "The business owner's number cannot be used as a customer contact." };
       if (data.customers.some((customer) => customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number is already assigned to another customer." };
       if (data.suppliers.some((supplier) => supplier.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a supplier and cannot be reused for a customer." };
-      const customer: Customer = { id: makeId("customer"), name, contactNumber, code: makeUniqueCustomerCode(`CUST-${String(data.customers.length + 1).padStart(3, "0")}`, data.customers), createdAt: new Date().toISOString() };
+      const customer: Customer = { id: makeId("customer"), name, contactNumber, gender: values.gender?.trim() ?? "", cnicNumber: values.cnicNumber?.trim() ?? "", code: makeUniqueCustomerCode(`CUST-${String(data.customers.length + 1).padStart(3, "0")}`, data.customers), createdAt: new Date().toISOString() };
       commit({ ...data, customers: [customer, ...data.customers] });
       return { ok: true, customer };
     },
     updateCustomer: (id, values) => {
       if (!values.name.trim() || !normalizeContact(values.contactNumber)) return { ok: false, message: "Customer name and contact number are required." };
       const contactNumber = normalizeContact(values.contactNumber);
+      if (ownerContact && ownerContact === contactNumber) return { ok: false, message: "The business owner's number cannot be used as a customer contact." };
       if (data.customers.some((customer) => customer.id !== id && customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number is already assigned to another customer." };
       if (data.suppliers.some((supplier) => supplier.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a supplier and cannot be reused for a customer." };
-      commit({ ...data, customers: data.customers.map((customer) => customer.id === id ? { ...customer, name: values.name.trim(), contactNumber } : customer) });
+      commit({ ...data, customers: data.customers.map((customer) => customer.id === id ? { ...customer, name: values.name.trim(), contactNumber, gender: values.gender?.trim() ?? "", cnicNumber: values.cnicNumber?.trim() ?? "" } : customer) });
       return { ok: true };
     },
     deleteCustomer: (id) => {
@@ -142,10 +217,13 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const name = values.name.trim();
       const contactNumber = normalizeContact(values.contactNumber);
       const company = values.company?.trim() ?? "";
+      const cnicNumber = values.cnicNumber?.trim() ?? "";
+      const openingBalance = typeof values.openingBalance === "number" && Number.isFinite(values.openingBalance) ? Math.max(values.openingBalance, 0) : 0;
       if (!name || !contactNumber) return { ok: false, message: "Supplier name and contact number are required." };
+      if (ownerContact && ownerContact === contactNumber) return { ok: false, message: "The business owner's number cannot be used as a supplier contact." };
       if (data.suppliers.some((supplier) => supplier.contactNumber === contactNumber)) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
       if (data.customers.some((customer) => customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
-      const supplier: Supplier = { id: makeId("supplier"), name, contactNumber, company, createdAt: new Date().toISOString() };
+      const supplier: Supplier = { id: makeId("supplier"), name, contactNumber, company, cnicNumber, openingBalance, createdAt: new Date().toISOString() };
       commit({ ...data, suppliers: [supplier, ...data.suppliers] });
       return { ok: true, supplier };
     },
@@ -153,10 +231,13 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const name = values.name.trim();
       const contactNumber = normalizeContact(values.contactNumber);
       const company = values.company?.trim() ?? "";
+      const cnicNumber = values.cnicNumber?.trim() ?? "";
+      const openingBalance = typeof values.openingBalance === "number" && Number.isFinite(values.openingBalance) ? Math.max(values.openingBalance, 0) : 0;
       if (!name || !contactNumber) return { ok: false, message: "Supplier name and contact number are required." };
+      if (ownerContact && ownerContact === contactNumber) return { ok: false, message: "The business owner's number cannot be used as a supplier contact." };
       if (data.suppliers.some((supplier) => supplier.id !== id && supplier.contactNumber === contactNumber)) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
       if (data.customers.some((customer) => customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
-      commit({ ...data, suppliers: data.suppliers.map((supplier) => supplier.id === id ? { ...supplier, name, contactNumber, company } : supplier) });
+      commit({ ...data, suppliers: data.suppliers.map((supplier) => supplier.id === id ? { ...supplier, name, contactNumber, company, cnicNumber, openingBalance } : supplier) });
       return { ok: true };
     },
     deleteSupplier: (id) => {
@@ -168,6 +249,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const supplierName = values.vendorName.trim();
       const supplierContact = normalizeContact(values.supplierContactNumber);
       const supplierCompany = values.supplierCompany?.trim() ?? "";
+      if (ownerContact && ownerContact === supplierContact) return { ok: false, message: "The business owner's number cannot be used as a supplier contact." };
       const supplierConflict = data.suppliers.find((supplier) => supplier.id !== values.supplierId && supplierContact && supplier.contactNumber === supplierContact);
       if (supplierConflict) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
       if (data.customers.some((customer) => customer.contactNumber === supplierContact)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
@@ -178,7 +260,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const { date, month } = getDateParts();
       const transaction: Transaction = { id: makeId("purchase"), type: "purchase", name: product.name, productId: product.id, unitCost: values.unitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: values.quantity, amount: total, paidAmount: values.paidAmount, outstandingAmount: total - values.paidAmount, time: "Just now", createdAt: new Date().toISOString(), date, month };
       const nextSuppliers = existingSupplier ? data.suppliers.map((item) => item.id === supplier.id ? supplier : item) : [supplier, ...data.suppliers];
-      const payment = values.paidAmount > 0 ? { id: makeId("payment"), supplierId: supplier.id, amount: values.paidAmount, note: "Paid with purchase", date, time: "Just now" } : null;
+      const payment = values.paidAmount > 0 ? { id: makeId("payment"), supplierId: supplier.id, amount: values.paidAmount, note: "Paid with purchase", date, time: "Just now", createdAt: new Date().toISOString() } : null;
       commit({ products: data.products.map((item) => item.id === product.id ? { ...item, inStockQuantity: item.inStockQuantity + values.quantity, received: item.received + values.quantity, costPrice: values.unitCost } : item), transactions: [transaction, ...data.transactions], customers: data.customers, suppliers: nextSuppliers, supplierPayments: payment ? [payment, ...data.supplierPayments] : data.supplierPayments });
       return { ok: true };
     },
@@ -200,6 +282,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     addSale: (values) => {
       const contactNumber = normalizeContact(values.customerContactNumber);
       const customerCode = normalizeCode(values.customerCode);
+      if (ownerContact && ownerContact === contactNumber) return { ok: false, message: "The business owner's number cannot be used as a customer contact." };
       const contactOwner = data.customers.find((customer) => customer.contactNumber === contactNumber);
       const codeOwner = data.customers.find((customer) => customer.code === customerCode);
       if (contactOwner && contactOwner.code !== customerCode) return { ok: false, message: "This contact number is already assigned to another customer." };
@@ -215,7 +298,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         const subtotal = line.quantity * line.unitSellingPrice;
         if (line.discount > subtotal) return { error: `${product.name} discount cannot exceed the line subtotal.` } as const;
         const amount = subtotal - line.discount;
-        return { productId: product.id, name: product.name, sku: product.sku, quantity: line.quantity, unitSellingPrice: line.unitSellingPrice, unitCost: product.costPrice, discount: line.discount, amount, profit: amount - line.quantity * product.costPrice };
+        return { productId: product.id, name: product.name, sku: product.sku, color: product.color, quantity: line.quantity, unitSellingPrice: line.unitSellingPrice, unitCost: product.costPrice, discount: line.discount, amount, profit: amount - line.quantity * product.costPrice };
       });
       const error = lineItems.find((line) => "error" in line);
       if (error && "error" in error) return { ok: false, message: error.error };
@@ -225,14 +308,81 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ products: data.products.map((product) => { const sold = items.find((item) => item.productId === product.id); return sold ? { ...product, inStockQuantity: product.inStockQuantity - sold.quantity, sold: product.sold + sold.quantity } : product; }), transactions: [transaction, ...data.transactions], customers: data.customers.some((item) => item.id === customer.id) ? data.customers.map((item) => item.id === customer.id ? customer : item) : [customer, ...data.customers], suppliers: data.suppliers, supplierPayments: data.supplierPayments });
       return { ok: true };
     },
+    addExchange: (values) => {
+      const givenProduct = data.products.find((product) => product.id === values.givenProductId);
+      const isBuyback = values.mode === "buyback";
+      const receivedProduct = values.receivedProductId ? data.products.find((product) => product.id === values.receivedProductId) : undefined;
+      const receivedQuantity = values.receivedQuantity ?? 0;
+      const receivedUnitSellingPrice = values.receivedUnitSellingPrice ?? 0;
+      const receiveSource = values.receiveSource ?? "inventory";
+      if (!givenProduct) return { ok: false, message: "Choose the phone received from the customer." };
+      if (!isBuyback && !receivedProduct) return { ok: false, message: "Choose the replacement phone sold to the customer." };
+      if (!isBuyback && givenProduct.id === receivedProduct?.id) return { ok: false, message: "The trade-in and replacement phone must be different products." };
+      if (!Number.isInteger(values.givenQuantity) || values.givenQuantity <= 0 || (!isBuyback && (!Number.isInteger(receivedQuantity) || receivedQuantity <= 0))) return { ok: false, message: "Quantities must be whole numbers greater than zero." };
+      if (values.tradeInUnitValue <= 0 || (!isBuyback && receivedUnitSellingPrice <= 0)) return { ok: false, message: "Trade-in value and selling price must be greater than zero." };
+      if (!isBuyback && receiveSource === "inventory" && receivedProduct && receivedQuantity > receivedProduct.inStockQuantity) return { ok: false, message: `${receivedProduct.name} only has ${receivedProduct.inStockQuantity} units available. Choose supplier arrangement or add stock first.` };
+      const contactNumber = normalizeContact(values.customerContactNumber);
+      const customerCode = normalizeCode(values.customerCode);
+      if (ownerContact && ownerContact === contactNumber) return { ok: false, message: "The business owner's number cannot be used as a customer contact." };
+      const contactOwner = data.customers.find((customer) => customer.contactNumber === contactNumber);
+      const codeOwner = data.customers.find((customer) => customer.code === customerCode);
+      if (contactOwner && contactOwner.code !== customerCode) return { ok: false, message: "This contact number is already assigned to another customer." };
+      if (codeOwner && codeOwner.contactNumber !== contactNumber) return { ok: false, message: "This customer code is already assigned to another customer." };
+      if (!contactOwner && data.suppliers.some((supplier) => supplier.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a supplier and cannot be reused for a customer." };
+      const selectedCustomer = values.customerId ? data.customers.find((customer) => customer.id === values.customerId) : undefined;
+      const existingCustomer = selectedCustomer ?? contactOwner ?? codeOwner;
+      const customer = existingCustomer ? { ...existingCustomer, name: values.customerName.trim(), contactNumber, code: makeUniqueCustomerCode(customerCode, data.customers, existingCustomer.id) } : { id: makeId("customer"), name: values.customerName.trim(), contactNumber, code: makeUniqueCustomerCode(customerCode, data.customers), createdAt: new Date().toISOString() };
+      if (!customer.name || !contactNumber) return { ok: false, message: "Customer name and contact number are required." };
+
+      let supplier: Supplier | undefined;
+      let purchaseTransaction: Transaction | undefined;
+      let purchasePayment: SupplierPayment | null = null;
+      const exchangeId = makeId("exchange");
+      const { date, month } = getDateParts();
+      if (!isBuyback && receiveSource === "supplier" && receivedProduct) {
+        const supplierName = values.supplierName.trim();
+        const supplierContact = normalizeContact(values.supplierContactNumber);
+        const supplierCompany = values.supplierCompany?.trim() ?? "";
+        if (!supplierName || !supplierContact) return { ok: false, message: "Supplier name and contact number are required when arranging the replacement phone." };
+        if (ownerContact && ownerContact === supplierContact) return { ok: false, message: "The business owner's number cannot be used as a supplier contact." };
+        if (data.customers.some((customerRecord) => customerRecord.contactNumber === supplierContact)) return { ok: false, message: "This supplier contact number belongs to a customer." };
+        const supplierConflict = data.suppliers.find((supplierRecord) => supplierRecord.id !== values.supplierId && supplierContact && supplierRecord.contactNumber === supplierContact);
+        if (supplierConflict) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
+        const supplierTotal = receivedQuantity * values.supplierUnitCost;
+        if (values.supplierUnitCost <= 0) return { ok: false, message: "Supplier cost must be greater than zero." };
+        if (values.supplierPaidAmount < 0 || values.supplierPaidAmount > supplierTotal) return { ok: false, message: "Supplier payment cannot exceed the supplier purchase total." };
+        const existingSupplier = data.suppliers.find((supplierRecord) => supplierRecord.id === values.supplierId || normalizeName(supplierRecord.name) === normalizeName(supplierName));
+        supplier = existingSupplier ? { ...existingSupplier, name: supplierName, contactNumber: supplierContact, company: supplierCompany } : { id: makeId("supplier"), name: supplierName, contactNumber: supplierContact, company: supplierCompany, createdAt: new Date().toISOString() };
+        purchaseTransaction = { id: makeId("purchase"), type: "purchase", source: "supplier", exchangeId, name: receivedProduct.name, productId: receivedProduct.id, unitCost: values.supplierUnitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: receivedQuantity, amount: supplierTotal, paidAmount: values.supplierPaidAmount, outstandingAmount: supplierTotal - values.supplierPaidAmount, time: "Just now", createdAt: new Date().toISOString(), date, month };
+        purchasePayment = values.supplierPaidAmount > 0 ? { id: makeId("payment"), supplierId: supplier.id, amount: values.supplierPaidAmount, note: "Paid with exchange arrangement", date, time: "Just now", createdAt: new Date().toISOString() } : null;
+      }
+
+      const tradeInTotal = values.givenQuantity * values.tradeInUnitValue;
+      const saleTotal = receivedQuantity * receivedUnitSellingPrice;
+      const amountDue = saleTotal - tradeInTotal;
+      const receivingUnitCost = receiveSource === "supplier" ? values.supplierUnitCost : receivedProduct?.costPrice ?? 0;
+      const buybackTransaction: Transaction = { id: makeId("buyback"), type: "purchase", source: "customer-trade-in", exchangeId, name: givenProduct.name, productId: givenProduct.id, unitCost: values.tradeInUnitValue, party: customer.name, customerId: customer.id, customerContactNumber: customer.contactNumber, customerCode: customer.code, quantity: values.givenQuantity, amount: tradeInTotal, paidAmount: tradeInTotal, outstandingAmount: 0, time: "Just now", createdAt: new Date().toISOString(), date, month };
+      const saleItems: SaleLineItem[] = !isBuyback && receivedProduct ? [{ productId: receivedProduct.id, name: receivedProduct.name, sku: receivedProduct.sku, color: receivedProduct.color, quantity: receivedQuantity, unitSellingPrice: receivedUnitSellingPrice, unitCost: receivingUnitCost, discount: 0, amount: saleTotal, profit: saleTotal - receivedQuantity * receivingUnitCost }] : [];
+      const saleTransaction: Transaction | undefined = !isBuyback && receivedProduct ? { id: makeId("sale"), type: "sale", source: "exchange", exchangeId, name: receivedProduct.name, party: customer.name, customerId: customer.id, customerContactNumber: customer.contactNumber, customerCode: customer.code, quantity: receivedQuantity, amount: saleTotal, profit: saleItems[0].profit, tradeInCredit: tradeInTotal, amountDue, time: "Just now", createdAt: new Date().toISOString(), date, month, items: saleItems } : undefined;
+      const nextSuppliers = !isBuyback && receiveSource === "supplier" && supplier ? (data.suppliers.some((item) => item.id === supplier?.id) ? data.suppliers.map((item) => item.id === supplier?.id ? supplier as Supplier : item) : [supplier, ...data.suppliers]) : data.suppliers;
+      const nextProducts = data.products.map((product) => {
+        if (product.id === givenProduct.id) return { ...product, inStockQuantity: product.inStockQuantity + values.givenQuantity, received: product.received + values.givenQuantity, costPrice: values.tradeInUnitValue };
+        if (!isBuyback && receivedProduct && product.id === receivedProduct.id) return { ...product, inStockQuantity: product.inStockQuantity + (receiveSource === "supplier" ? receivedQuantity : 0) - receivedQuantity, received: product.received + (receiveSource === "supplier" ? receivedQuantity : 0), sold: product.sold + receivedQuantity, costPrice: receiveSource === "supplier" ? values.supplierUnitCost : product.costPrice };
+        return product;
+      });
+      const nextTransactions = [ ...(saleTransaction ? [saleTransaction] : []), buybackTransaction, ...(purchaseTransaction ? [purchaseTransaction] : []), ...data.transactions];
+      commit({ products: nextProducts, transactions: nextTransactions, customers: data.customers.some((item) => item.id === customer.id) ? data.customers.map((item) => item.id === customer.id ? customer : item) : [customer, ...data.customers], suppliers: nextSuppliers, supplierPayments: purchasePayment ? [purchasePayment, ...data.supplierPayments] : data.supplierPayments });
+      return { ok: true };
+    },
     addSupplierPayment: (values) => {
       const supplier = data.suppliers.find((item) => item.id === values.supplierId);
       if (!supplier || values.amount <= 0) return { ok: false, message: "Choose a supplier and enter a payment greater than zero." };
       const purchased = data.transactions.filter((transaction) => transaction.type === "purchase" && transaction.supplierId === supplier.id).reduce((sum, transaction) => sum + transaction.amount, 0);
       const paid = data.supplierPayments.filter((payment) => payment.supplierId === supplier.id).reduce((sum, payment) => sum + payment.amount, 0);
-      if (values.amount > purchased - paid) return { ok: false, message: "Payment cannot exceed the supplier's outstanding balance." };
+      const outstanding = purchased + (supplier.openingBalance ?? 0) - paid;
+      if (values.amount > outstanding) return { ok: false, message: "Payment cannot exceed the supplier's outstanding balance." };
       const { date } = getDateParts();
-      const payment: SupplierPayment = { id: makeId("payment"), supplierId: supplier.id, amount: values.amount, note: values.note?.trim(), date, time: "Just now" };
+      const payment: SupplierPayment = { id: makeId("payment"), supplierId: supplier.id, amount: values.amount, note: values.note?.trim(), date, time: "Just now", createdAt: new Date().toISOString() };
       commit({ ...data, supplierPayments: [payment, ...data.supplierPayments] });
       return { ok: true };
     },
@@ -261,7 +411,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         const unitCost = previous?.unitCost ?? product.costPrice;
         const subtotal = item.quantity * item.unitSellingPrice;
         const amount = subtotal - item.discount;
-        nextItems.push({ productId: product.id, name: product.name, sku: product.sku, quantity: item.quantity, unitSellingPrice: item.unitSellingPrice, unitCost, discount: item.discount, amount, profit: amount - item.quantity * unitCost });
+        nextItems.push({ productId: product.id, name: product.name, sku: product.sku, color: product.color, quantity: item.quantity, unitSellingPrice: item.unitSellingPrice, unitCost, discount: item.discount, amount, profit: amount - item.quantity * unitCost });
       }
       const stockIssue = Array.from(new Set([...previousItems.map((item) => item.productId), ...nextItems.map((item) => item.productId)])).map((productId) => {
         const product = data.products.find((entry) => entry.id === productId);

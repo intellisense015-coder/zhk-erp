@@ -1,11 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { BarChart3, Bell, Boxes, Building2, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Menu, PackagePlus, PanelLeftClose, PanelLeftOpen, Settings2, ShoppingCart, Truck, Users, X, type LucideIcon } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import {
+  BarChart3,
+  Bell,
+  Boxes,
+  Building2,
+  ChevronDown,
+  ClipboardList,
+  LayoutDashboard,
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PackagePlus,
+  Receipt,
+  Settings2,
+  ShoppingCart,
+  Users,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
-export interface NavSubItem { label: string; href: string; icon?: LucideIcon; }
-export interface NavGroupItem { label: string; href?: string; icon: LucideIcon; items?: NavSubItem[]; }
+export interface NavSubItem {
+  label: string;
+  href: string;
+  icon?: LucideIcon;
+}
+
+export interface NavGroupItem {
+  label: string;
+  href?: string;
+  icon: LucideIcon;
+  items?: NavSubItem[];
+}
+
 export interface ResponsiveSidebarProps {
   currentPath?: string;
   onNavigate?: (href: string) => void;
@@ -18,279 +49,348 @@ export interface ResponsiveSidebarProps {
   appName?: string;
 }
 
+// Keep the navigation focused on inventory, sales, insights, operations, and entities.
 const DEFAULT_NAV_GROUPS: NavGroupItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "POS", href: "/pos", icon: ShoppingCart },
+  { label: "Inventory", href: "/inventory", icon: Boxes },
+  { label: "Sales", href: "/sales", icon: ShoppingCart },
   {
-    label: "Trading", icon: ShoppingCart, items: [
-      { label: "Inventory", href: "/inventory", icon: Boxes },
-      { label: "Sales", href: "/sales", icon: ShoppingCart },
-      { label: "Purchases", href: "/purchases", icon: Truck }
-    ]
-  },
-  {
-    label: "Insights", icon: BarChart3, items: [
+    label: "Insights",
+    icon: BarChart3,
+    items: [
       { label: "Reports", href: "/reports", icon: BarChart3 },
-      { label: "Transactions", href: "/transactions", icon: ClipboardList }
-    ]
+      { label: "Transactions", href: "/transactions", icon: ClipboardList },
+    ],
   },
   {
-    label: "Operations", icon: PackagePlus, items: [
+    label: "Operations",
+    icon: PackagePlus,
+    items: [
+      { label: "Purchases", href: "/purchases", icon: Receipt },
       { label: "Low stock", href: "/low-stock", icon: Bell },
-      { label: "Settings", href: "/settings", icon: Settings2 }
-    ]
+      { label: "Settings", href: "/settings", icon: Settings2 },
+    ],
   },
   {
-    label: "Entities", icon: Users, items: [
+    label: "Entities",
+    icon: Users,
+    items: [
       { label: "Customers", href: "/customers", icon: Users },
-      { label: "Suppliers", href: "/suppliers", icon: Building2 }
-    ]
+      { label: "Suppliers", href: "/suppliers", icon: Building2 },
+    ],
   },
 ];
 
 const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(" ");
 
-export function OsSidebar({ currentPath, onNavigate, onSignOut, mobileOpen = false, onMobileOpenChange, onCollapsedChange, userName = "Minaal Rizwan", userRole = "Workspace admin", appName = "The Cubicle OS" }: ResponsiveSidebarProps) {
+function isRouteActive(pathname: string, href?: string) {
+  return Boolean(href && (pathname === href || pathname.startsWith(`${href}/`)));
+}
+
+function Brand({ compact = false, appName }: { compact?: boolean; appName: string }) {
+  return (
+    <div className="brand-wrapper">
+      <div className="brand-logo-gem">
+        <Image src="/solexa-logo.png" alt="" width={48} height={48} />
+      </div>
+      {!compact && (
+        <div className="brand-text-container">
+          <span className="brand-title">{appName}</span>
+          <span className="brand-subtitle">By Intellisense</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TreeBranch({ last }: { last: boolean }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 30" className="tree-branch-svg">
+      <path
+        d={last ? "M1 0 V9 Q1 15 7 15 H20" : "M1 0 V30 M1 9 Q1 15 7 15 H20"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function OsSidebar({
+  currentPath,
+  onNavigate,
+  onSignOut,
+  mobileOpen = false,
+  onMobileOpenChange,
+  onCollapsedChange,
+  appName = "Solexa",
+}: ResponsiveSidebarProps) {
   const pathname = usePathname() || currentPath || "/dashboard";
   const router = useRouter();
-  const activePath = pathname;
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [internalMobileOpen, setInternalMobileOpen] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ Trading: true, Insights: true, Operations: true, Entities: true });
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   const drawerOpen = mobileOpen || internalMobileOpen;
-  const setSidebarCollapsed = (value: boolean) => { setCollapsed(value); onCollapsedChange?.(value); };
 
-  useEffect(() => {
-    DEFAULT_NAV_GROUPS.forEach((group) => {
-      if (group.items?.some((sub) => sub.href === activePath)) setExpandedGroups((previous) => ({ ...previous, [group.label]: true }));
-    });
-  }, [activePath]);
-  useEffect(() => {
-    document.body.style.overflow = drawerOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
-  }, [drawerOpen]);
-
-  const closeMobile = () => { setInternalMobileOpen(false); onMobileOpenChange?.(false); };
-  const handleNavigate = (href: string) => { closeMobile(); onNavigate ? onNavigate(href) : router.push(href); };
-  const toggleGroup = (label: string) => {
-    if (collapsed) { setSidebarCollapsed(false); setExpandedGroups((previous) => ({ ...previous, [label]: true })); return; }
-    setExpandedGroups((previous) => ({ ...previous, [label]: !previous[label] }));
+  const setSidebarCollapsed = (value: boolean) => {
+    setCollapsed(value);
+    onCollapsedChange?.(value);
   };
-  const isActive = (href?: string) => Boolean(href && (activePath === href || activePath.startsWith(`${href}/`)));
 
-  const navigation = (mobile = false) => (
-    <nav className={mobile ? "mobile-nav custom-scrollbar" : "sidebar-nav custom-scrollbar"} aria-label="Workspace navigation">
-      <ul className="nav-group-list">
+  useEffect(() => {
+    onCollapsedChange?.(collapsed);
+  }, [collapsed, onCollapsedChange]);
+
+  const closeMobile = useCallback(() => {
+    setInternalMobileOpen(false);
+    onMobileOpenChange?.(false);
+  }, [onMobileOpenChange]);
+
+  const previousPathRef = useRef(pathname);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeMobile();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = "";
+    };
+  }, [closeMobile, drawerOpen]);
+
+  useEffect(() => {
+    if (previousPathRef.current === pathname) return;
+    previousPathRef.current = pathname;
+    const timer = window.setTimeout(closeMobile, 0);
+    return () => window.clearTimeout(timer);
+  }, [closeMobile, pathname]);
+
+  function navigate(href: string) {
+    closeMobile();
+    if (onNavigate) onNavigate(href);
+    else router.push(href);
+  }
+
+  function chooseGroup(group: NavGroupItem) {
+    if (group.href) {
+      navigate(group.href);
+      return;
+    }
+    if (collapsed) {
+      setSidebarCollapsed(false);
+      setOpenGroup(group.label);
+      return;
+    }
+    setOpenGroup((current) => (current === group.label ? null : group.label));
+  }
+
+  const desktopNavigation = (
+    <nav className="sidebar-nav custom-scrollbar" aria-label="Workspace navigation">
+      <div className={cn("nav-group-list", collapsed && "is-collapsed-list")}>
         {DEFAULT_NAV_GROUPS.map((group) => {
           const GroupIcon = group.icon;
-          const hasSubItems = Boolean(group.items?.length);
-          const groupActive = group.href ? isActive(group.href) : Boolean(group.items?.some((item) => isActive(item.href)));
-          const expanded = Boolean(expandedGroups[group.label]);
-          const parentClass = mobile ? "mobile-parent-btn" : "nav-parent-btn";
-          return <li key={group.label} className={mobile ? "mobile-group-node" : "nav-group-node"}>
-            {mobile && <p className="mobile-nav-group-label">{group.label}</p>}
-            <button type="button" onClick={() => hasSubItems ? toggleGroup(group.label) : group.href && handleNavigate(group.href)} className={cn(parentClass, groupActive && "active-parent")} title={!mobile && collapsed ? group.label : undefined}>
-              <span className="nav-icon-box"><GroupIcon size={16} /></span>
-              {(mobile || !collapsed) && <span className="nav-label-text">{group.label}</span>}
-              {(mobile || !collapsed) && hasSubItems && <ChevronDown size={13} className={cn("chevron-indicator", expanded && "rotate-up")} />}
-              {groupActive && <span className="active-pill-bar" />}
-            </button>
-            {(!collapsed || mobile) && hasSubItems && expanded && <div className={mobile ? "mobile-submenu-list" : "subnav-container"}>
-              {!mobile && <div className="subnav-tree-guide" />}
-              <ul className={!mobile ? "subnav-list" : undefined}>{group.items!.map((sub) => {
-                const SubIcon = sub.icon;
-                return <li key={sub.href} className={!mobile ? "subnav-item" : undefined}>
-                  {!mobile && <span className="tree-branch-svg" aria-hidden="true" />}
-                  <button type="button" onClick={() => handleNavigate(sub.href)} className={cn(mobile ? "mobile-sub-btn" : "subnav-btn", isActive(sub.href) && (mobile ? "active-mobile-sub" : "active-sub"))}>
-                    {SubIcon && <SubIcon size={mobile ? 14 : 13} className="sub-icon" />}<span className={!mobile ? "subnav-label" : undefined}>{sub.label}</span>
-                  </button>
-                </li>;
-              })}</ul>
-            </div>}
-          </li>;
+          const groupActive = group.href
+            ? isRouteActive(pathname, group.href)
+            : Boolean(group.items?.some((item) => isRouteActive(pathname, item.href)));
+          const expanded = openGroup === group.label;
+          return (
+            <div key={group.label} className="nav-group-node">
+              <button
+                type="button"
+                title={collapsed ? group.label : undefined}
+                onClick={() => chooseGroup(group)}
+                className={cn("nav-parent-btn", groupActive && "active-parent")}
+              >
+                <span className="nav-icon-box"><GroupIcon size={collapsed ? 15 : 14} /></span>
+                {!collapsed && (
+                  <>
+                    <span className="nav-label-text">{group.label}</span>
+                    {group.items && <ChevronDown size={12} className={cn("chevron-indicator", expanded && "rotate-up")} />}
+                  </>
+                )}
+                {groupActive && <span className={cn("active-pill-bar", collapsed && "collapsed-active-pill")} />}
+              </button>
+              <AnimatePresence initial={false}>
+                {!collapsed && group.items && expanded && (
+                  <motion.div
+                    key={`submenu-${group.label}`}
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                    className="subnav-container"
+                  >
+                    <div className="subnav-list">
+                      {group.items.map((item, index) => {
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            key={item.href}
+                            type="button"
+                            onClick={() => navigate(item.href)}
+                            className={cn("subnav-btn", isRouteActive(pathname, item.href) && "active-sub")}
+                          >
+                            <TreeBranch last={index === group.items!.length - 1} />
+                            {Icon && <Icon size={12} />}
+                            <span className="subnav-label">{item.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
         })}
-      </ul>
+      </div>
     </nav>
   );
 
-  useEffect(() => { onCollapsedChange?.(collapsed); }, [collapsed, onCollapsedChange]);
+  const mobileNavigation = (
+    <nav className="mobile-nav custom-scrollbar" aria-label="Workspace navigation">
+      <div className="mobile-nav-groups">
+        {DEFAULT_NAV_GROUPS.map((group) => (
+          <section key={group.label} className="mobile-group-node">
+            <p className="mobile-nav-group-label">{group.label}</p>
+            {(group.items ?? [{ label: group.label, href: group.href!, icon: group.icon }]).map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.href}
+                  type="button"
+                  onClick={() => navigate(item.href)}
+                  className={cn("mobile-sub-btn", isRouteActive(pathname, item.href) && "active-mobile-sub")}
+                >
+                  {Icon && <Icon size={12} />}
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </section>
+        ))}
+      </div>
+    </nav>
+  );
 
-  return <>
-    <div className="mobile-header-bar"><div className="brand-badge"><div className="brand-logo-gem"><img src="/solexa-logo.jpeg" alt="" /></div><span className="brand-name">{appName}</span></div><button type="button" onClick={() => { setInternalMobileOpen(true); onMobileOpenChange?.(true); }} className="mobile-toggle-btn" aria-label="Open sidebar menu"><Menu size={20} /></button></div>
-    <aside className={cn("desktop-sidebar", collapsed && "is-collapsed")}>
-      <div className="sidebar-header"><div className="brand-wrapper"><div className="brand-logo-gem"><img src="/solexa-logo.jpeg" alt="" /></div>{!collapsed && <div className="brand-text-container"><span className="brand-title">{appName}</span><span className="brand-subtitle">Workspace operations</span></div>}</div>{!collapsed && <button type="button" onClick={() => setSidebarCollapsed(true)} className="icon-action-btn" title="Collapse sidebar" aria-label="Collapse sidebar"><PanelLeftClose size={15} /></button>}</div>
-      {collapsed && <button type="button" onClick={() => setSidebarCollapsed(false)} className="collapsed-expand-btn" title="Expand sidebar" aria-label="Expand sidebar"><PanelLeftOpen size={16} /></button>}
-      {navigation()}
-      <div className="sidebar-footer">{!collapsed && <div className="user-profile-strip"><div className="avatar-chip">{userName.charAt(0).toUpperCase()}</div><div className="user-meta"><span className="user-name">{userName}</span><span className="user-role">{userRole}</span></div></div>}<button type="button" onClick={onSignOut} className="signout-btn" title={collapsed ? "Sign Out" : undefined}><LogOut size={16} />{!collapsed && <span>Sign Out</span>}</button></div>
-    </aside>
-    {drawerOpen && <div className="mobile-overlay"><div className="mobile-backdrop" onClick={closeMobile} aria-label="Close menu backdrop" /><aside className="mobile-drawer"><div className="mobile-drawer-header"><div className="brand-wrapper"><div className="brand-logo-gem"><img src="/solexa-logo.jpeg" alt="" /></div><div className="brand-text-container"><span className="brand-title">{appName}</span><span className="brand-subtitle">Workspace operations</span></div></div><button type="button" onClick={closeMobile} className="icon-action-btn" aria-label="Close sidebar"><X size={18} /></button></div>{navigation(true)}<div className="mobile-footer"><div className="user-profile-strip"><div className="avatar-chip">{userName.charAt(0).toUpperCase()}</div><div className="user-meta"><span className="user-name">{userName}</span><span className="user-role">{userRole}</span></div></div><button type="button" onClick={onSignOut} className="signout-btn"><LogOut size={16} /><span>Sign Out</span></button></div></aside></div>}
-    <style jsx global>{`
-      :root { --sb-panel:var(--surface); --sb-panel-soft:var(--surface-soft); --sb-border:var(--border); --sb-text:var(--text-primary); --sb-muted:var(--text-muted); --sb-brand:var(--primary); --sb-brand-soft:var(--primary-soft); --sb-danger:var(--error); --sb-danger-soft:var(--error-glow); --sb-shadow:var(--shadow-out); --sb-radius:30px; }
-      .dark,html[data-theme="dark"] { --sb-panel:var(--surface); --sb-panel-soft:var(--surface-soft); --sb-border:var(--border); --sb-text:var(--text-primary); --sb-muted:var(--text-muted); --sb-brand:var(--primary); --sb-brand-soft:var(--primary-soft); --sb-danger:var(--error); --sb-danger-soft:var(--error-glow); --sb-shadow:var(--shadow-out); }
-      .mobile-header-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;background:var(--sb-panel);border-bottom:1px solid var(--sb-border);position:sticky;top:0;z-index:40}.brand-badge,.brand-wrapper{display:flex;align-items:center;gap:10px}.brand-logo-gem{width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,var(--sb-brand),#31594d);color:#fff;display:grid;place-items:center;font-weight:900;font-size:16px;flex-shrink:0}.brand-name,.brand-title{font-weight:800;color:var(--sb-text)}.brand-name{font-size:14px}.brand-text-container{display:flex;flex-direction:column;line-height:1.1}.brand-title{font-size:13px}.brand-subtitle{margin-top:4px;color:var(--sb-muted);font-size:9px}.mobile-toggle-btn,.icon-action-btn,.collapsed-expand-btn{display:grid;place-items:center;border:0;cursor:pointer;color:var(--sb-muted);background:var(--sb-panel-soft)}.mobile-toggle-btn{width:38px;height:38px;border-radius:12px}.icon-action-btn{width:30px;height:30px;border-radius:9px}.collapsed-expand-btn{width:40px;height:40px;margin:6px auto 0;border-radius:12px;color:var(--sb-brand)}
-      .desktop-sidebar{display:none; position:fixed;top:14px;bottom:14px;left:14px;z-index:50;width:240px;flex-direction:column;background:var(--sb-panel);border:1px solid var(--sb-border);border-radius:var(--sb-radius);box-shadow:var(--sb-shadow);padding:14px 10px;transition:width .35s ease;user-select:none;font-family:inherit}.desktop-sidebar.is-collapsed{width:72px;padding:14px 8px}.sidebar-header{display:flex;align-items:center;justify-content:space-between;height:48px;padding:0 6px;flex-shrink:0}.desktop-sidebar.is-collapsed .sidebar-header{justify-content:center;padding:0}.sidebar-nav,.mobile-nav{flex:1;overflow-y:auto;overflow-x:hidden;margin-top:10px;padding-right:2px}.nav-group-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}.nav-group-node,.mobile-group-node{position:relative;width:100%}.nav-parent-btn,.mobile-parent-btn{position:relative;display:flex;align-items:center;width:100%;height:40px;border-radius:14px;padding:0 10px;border:0;background:transparent;color:var(--sb-text);font-size:11px;font-weight:600;cursor:pointer;text-align:left}.nav-parent-btn:hover,.mobile-parent-btn:hover{background:var(--sb-panel-soft)}.nav-parent-btn.active-parent,.mobile-parent-btn.active-parent{background:var(--sb-brand-soft);color:var(--sb-brand)}.desktop-sidebar.is-collapsed .nav-parent-btn{width:44px;height:44px;padding:0;margin:0 auto;justify-content:center}.nav-icon-box{display:grid;place-items:center;width:24px;height:24px;flex-shrink:0;margin-right:8px}.desktop-sidebar.is-collapsed .nav-icon-box{margin-right:0}.nav-label-text{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.chevron-indicator{color:var(--sb-muted);transition:transform .3s ease}.chevron-indicator.rotate-up{transform:rotate(180deg)}.active-pill-bar{position:absolute;right:0;top:8px;bottom:8px;width:3.5px;border-radius:4px 0 0 4px;background:var(--sb-brand)}
-      .subnav-container{position:relative;margin-left:20px;padding-left:14px}.subnav-list,.mobile-submenu-list{list-style:none;margin:3px 0 6px;padding:0;display:flex;flex-direction:column;gap:2px}.subnav-item{position:relative;display:flex;align-items:center}.subnav-tree-guide{position:absolute;left:0;top:0;bottom:0;border-left:1px solid var(--sb-border)}.tree-branch-svg{position:absolute;left:-14px;top:0;width:16px;height:30px;border-left:1px solid var(--sb-border);pointer-events:none}.subnav-btn,.mobile-sub-btn{position:relative;display:flex;align-items:center;gap:7px;width:100%;height:30px;padding:0 8px;border-radius:10px;border:0;background:transparent;color:var(--sb-muted);font-size:10.5px;font-weight:500;cursor:pointer;text-align:left}.subnav-btn:hover,.mobile-sub-btn:hover,.subnav-btn.active-sub,.mobile-sub-btn.active-mobile-sub{background:var(--sb-brand-soft);color:var(--sb-brand)}.subnav-label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sidebar-footer,.mobile-footer{margin-top:10px;display:flex;flex-direction:column;gap:6px;flex-shrink:0}.user-profile-strip{display:flex;align-items:center;gap:9px;padding:8px 10px;background:var(--sb-panel-soft);border-radius:14px}.avatar-chip{width:30px;height:30px;border-radius:10px;background:var(--sb-brand);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700;flex-shrink:0}.user-meta{display:flex;flex-direction:column;min-width:0;overflow:hidden}.user-name,.user-role{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.user-name{font-size:11px;font-weight:700;color:var(--sb-text)}.user-role{font-size:9px;color:var(--sb-muted)}.signout-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:38px;border-radius:14px;border:0;background:var(--sb-danger-soft);color:var(--sb-danger);font-size:11px;font-weight:600;cursor:pointer}.desktop-sidebar.is-collapsed .signout-btn{width:44px;height:44px;margin:0 auto;padding:0}.mobile-overlay{position:fixed;inset:0;z-index:999;display:flex}.mobile-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(4px)}.mobile-drawer{position:relative;z-index:1000;width:min(85vw,300px);height:calc(100% - 24px);margin:12px;background:var(--sb-panel);border-radius:var(--sb-radius);box-shadow:var(--sb-shadow);display:flex;flex-direction:column;padding:16px 12px}.mobile-drawer-header{display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid var(--sb-border)}.mobile-nav{margin-top:12px}.mobile-submenu-list{margin-left:26px;padding-left:10px;border-left:2px solid var(--sb-panel-soft);margin-top:4px;margin-bottom:6px}
-      .brand-logo-gem img { width:100%; height:100%; display:block; object-fit:cover; border-radius:inherit; }
-      .mobile-backdrop { background:var(--dialog-overlay) !important; }
-      .subnav-container { animation: sidebarSubnavIn .2s ease-out; transform-origin: top; }
-      .mobile-drawer { animation: sidebarDrawerIn .25s ease-out; }
-      @keyframes sidebarSubnavIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
-      @keyframes sidebarDrawerIn { from { opacity:0; transform:translateX(-12px); } to { opacity:1; transform:translateX(0); } }
-      @media (min-width:1024px){.mobile-header-bar{display:none}.desktop-sidebar{display:flex}}@media (max-width:1023px){.mobile-header-bar{display:flex}.desktop-sidebar{display:none}}
-      @media (min-width:1024px) {
-        .desktop-sidebar { top:14px; bottom:14px; left:14px; width:216px; padding:10px 8px; border-radius:24px; }
-        .desktop-sidebar.is-collapsed { width:68px; padding:10px 7px; }
-        .sidebar-header { height:44px; padding:0 5px; }
-        .brand-logo-gem { width:32px; height:32px; border-radius:10px; font-size:14px; }
-        .brand-title { font-size:12px; }
-        .brand-subtitle { margin-top:3px; font-size:8px; }
-        .sidebar-nav { margin-top:11px; }
-        .nav-group-list { gap:5px; }
-        .nav-parent-btn { height:35px; border-radius:12px; padding:0 8px; font-size:10.5px; }
-        .nav-icon-box { width:22px; height:22px; margin-right:7px; }
-        .desktop-sidebar.is-collapsed .nav-parent-btn { width:42px; height:42px; }
-        .chevron-indicator { width:12px; height:12px; }
-        .active-pill-bar { top:7px; bottom:7px; width:3px; }
-        .subnav-container { margin-left:19px; padding-left:14px; }
-        .subnav-container::before { content:""; position:absolute; left:0; top:-8px; bottom:15px; width:1px; background:var(--sb-border); pointer-events:none; }
-        .subnav-list { gap:1px; margin:3px 0 6px; }
-        .subnav-tree-guide, .tree-branch-svg { display:none; }
-        .subnav-item { min-height:29px; }
-        .subnav-item::before { content:""; position:absolute; left:-14px; top:0; width:13px; height:15px; background:linear-gradient(var(--sb-border),var(--sb-border)) left top / 1px 100% no-repeat, linear-gradient(var(--sb-border),var(--sb-border)) left bottom / 100% 1px no-repeat; pointer-events:none; }
-        .subnav-item:not(:last-child)::after { content:""; position:absolute; left:-14px; top:15px; bottom:-1px; width:1px; background:var(--sb-border); pointer-events:none; }
-        .subnav-btn { height:29px; border-radius:9px; padding:0 7px; font-size:10px; }
-        .subnav-btn { color:var(--sb-text); }
-        .sidebar-footer { margin-top:8px; gap:6px; }
-        .user-profile-strip { gap:8px; padding:7px 8px; border-radius:12px; }
-        .avatar-chip { width:28px; height:28px; border-radius:9px; font-size:10px; }
-        .user-name { font-size:10px; }
-        .user-role { font-size:8px; }
-        .signout-btn { height:36px; border-radius:12px; font-size:10px; }
-      }
+  return (
+    <>
+      <aside className={cn("desktop-sidebar", collapsed && "is-collapsed")}>
+        <div className={cn("sidebar-header", collapsed && "is-collapsed-header")}>
+          <Brand compact={collapsed} appName={appName} />
+          {!collapsed && (
+            <button type="button" onClick={() => setSidebarCollapsed(true)} className="icon-action-btn" aria-label="Collapse sidebar">
+              <PanelLeftClose size={14} />
+            </button>
+          )}
+        </div>
+        {collapsed && (
+          <button type="button" onClick={() => setSidebarCollapsed(false)} className="collapsed-expand-btn" aria-label="Expand sidebar" title="Expand sidebar">
+            <PanelLeftOpen size={15} />
+          </button>
+        )}
+        {desktopNavigation}
+        <div className="sidebar-footer">
+          <button type="button" onClick={onSignOut} className="signout-btn" title={collapsed ? "Sign out" : undefined}>
+            <LogOut size={15} />
+            {!collapsed && <span>Sign out</span>}
+          </button>
+        </div>
+      </aside>
 
-      /* App-shell specification overrides */
-      .desktop-sidebar {
-        top: 12px;
-        bottom: 12px;
-        left: 12px;
-        width: 222px;
-        padding: 10px;
-        border: 0;
-        border-radius: 30px;
-        background: var(--panel-strong, var(--sb-panel));
-        box-shadow: var(--sb-shadow);
-        transition: width 500ms cubic-bezier(.16, 1, .3, 1);
-      }
-      .desktop-sidebar.is-collapsed {
-        width: 70px;
-        padding: 10px;
-      }
-      .sidebar-header { height: 56px; padding: 0 8px; }
-      .desktop-sidebar.is-collapsed .sidebar-header { height: 56px; padding: 0; }
-      .icon-action-btn,
-      .collapsed-expand-btn {
-        width: 32px;
-        height: 32px;
-        border-radius: 11px;
-        background: var(--sb-panel-soft);
-      }
-      .collapsed-expand-btn {
-        width: 44px;
-        height: 44px;
-        margin-top: 0;
-        border-radius: 15px;
-        background: var(--sb-brand-soft);
-      }
-      .brand-logo-gem { width: 32px; height: 32px; border-radius: 12px; }
-      .brand-title { font-size: 12px; font-weight: 600; letter-spacing: -.02em; }
-      .brand-subtitle { font-size: 8px; font-weight: 500; letter-spacing: .08em; }
-      .sidebar-nav { margin-top: 10px; }
-      .nav-group-list { gap: 4px; }
-      .nav-parent-btn {
-        height: 40px;
-        border-radius: 15px;
-        padding: 0 12px;
-        gap: 10px;
-        font-size: 11px;
-        font-weight: 600;
-      }
-      .desktop-sidebar.is-collapsed .nav-parent-btn {
-        width: 44px;
-        height: 44px;
-        border-radius: 15px;
-      }
-      .nav-icon-box { width: 20px; height: 20px; margin-right: 8px; }
-      .desktop-sidebar.is-collapsed .nav-icon-box { width: 20px; height: 20px; }
-      .nav-parent-btn > .nav-icon-box svg { width: 14px; height: 14px; }
-      .desktop-sidebar.is-collapsed .nav-parent-btn > .nav-icon-box svg { width: 15px; height: 15px; }
-      .nav-parent-btn > .chevron-indicator { width: 12px; height: 12px; }
-      .active-pill-bar { top: 8px; bottom: 8px; width: 3px; height: 24px; border-radius: 999px; }
-      .desktop-sidebar.is-collapsed .active-pill-bar { top: 8px; bottom: auto; height: 28px; }
-      .subnav-container { margin-left: 20px; padding-left: 20px; overflow: hidden; }
-      .subnav-btn { height: 30px; border-radius: 11px; padding: 0 8px; gap: 8px; font-size: 10px; font-weight: 500; }
-      .subnav-btn svg { width: 12px; height: 12px; }
-      .subnav-container::before { left: 0; border-color: color-mix(in srgb, var(--sb-muted) 28%, transparent); }
-      .subnav-item::before { left: -20px; width: 20px; border-color: color-mix(in srgb, var(--sb-muted) 28%, transparent); }
-      .subnav-item:not(:last-child)::after { left: -20px; background: color-mix(in srgb, var(--sb-muted) 28%, transparent); }
-      .sidebar-footer { margin-top: 10px; gap: 6px; }
-      .signout-btn {
-        height: 44px;
-        border-radius: 15px;
-        padding: 0 16px;
-        font-size: 9px;
-        font-weight: 600;
-      }
-      .desktop-sidebar.is-collapsed .signout-btn { width: 44px; height: 44px; border-radius: 15px; }
-      .signout-btn svg { width: 15px; height: 15px; }
-      .user-profile-strip { border-radius: 15px; }
-      .mobile-overlay { z-index: 50; }
-      .mobile-backdrop { z-index: 50; background: rgba(0, 0, 0, .4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-      .mobile-drawer {
-        z-index: 60;
-        inset-block: 12px;
-        left: 12px;
-        width: min(86vw, 290px);
-        height: auto;
-        margin: 0;
-        border-radius: 30px;
-        background: var(--sb-panel);
-        padding: 12px;
-        box-shadow: var(--sb-shadow);
-      }
-      .mobile-drawer-header { padding: 8px; border-bottom: 0; }
-      .mobile-drawer .icon-action-btn { width: 32px; height: 32px; border-radius: 11px; }
-      .mobile-nav { margin-top: 16px; padding: 0 2px; }
-      .mobile-group-node { margin-bottom: 12px; }
-      .mobile-nav-group-label {
-        margin: 0;
-        padding: 0 12px 4px;
-        color: var(--sb-muted);
-        font-size: 7px;
-        font-weight: 600;
-        letter-spacing: .18em;
-        text-transform: uppercase;
-      }
-      .mobile-parent-btn {
-        height: 32px;
-        margin-bottom: 2px;
-        border-radius: 12px;
-        padding: 0 12px;
-        gap: 10px;
-        font-size: 8px;
-        font-weight: 500;
-      }
-      .mobile-submenu-list { margin: 2px 0 0; padding-left: 10px; }
-      .mobile-sub-btn { height: 32px; border-radius: 12px; padding: 0 12px; font-size: 8px; }
-      .mobile-footer { margin-top: 8px; gap: 8px; }
-      .mobile-footer .signout-btn { height: 48px; border-radius: 17px; padding: 0 16px; justify-content: flex-start; font-size: 10px; }
-      .brand-logo-gem { background: var(--sb-panel-soft); }
-      @media (max-width: 1023px) {
-        .desktop-sidebar { width: 222px; }
-      }
-    `}</style>
-  </>;
+      {drawerOpen && (
+        <div className="mobile-overlay">
+          <button type="button" className="mobile-backdrop" aria-label="Close navigation" onClick={closeMobile} />
+          <aside className="mobile-drawer">
+            <div className="mobile-drawer-header">
+              <Brand appName={appName} />
+              <button type="button" onClick={closeMobile} className="icon-action-btn" aria-label="Close sidebar">
+                <X size={14} />
+              </button>
+            </div>
+            {mobileNavigation}
+            <div className="mobile-footer">
+              <button type="button" onClick={onSignOut} className="signout-btn">
+                <LogOut size={16} />
+                <span>Sign out</span>
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      <style jsx global>{`
+        :root {
+          --sb-panel: var(--panel-strong, var(--surface));
+          --sb-panel-soft: var(--panel-soft, var(--surface-soft));
+          --sb-text: var(--text-primary);
+          --sb-muted: var(--text-muted);
+          --sb-brand: var(--primary);
+          --sb-brand-soft: var(--primary-soft);
+          --sb-danger: var(--error);
+          --sb-danger-soft: var(--error-glow);
+          --sb-shadow: var(--shadow-out);
+        }
+        .desktop-sidebar { position: fixed; inset: 12px auto 12px 12px; z-index: 50; display: none; width: 222px; flex-direction: column; overflow: hidden; border-radius: 30px; background: var(--sb-panel); box-shadow: var(--sb-shadow); padding: 10px; transition: width 500ms cubic-bezier(.16,1,.3,1); }
+        .desktop-sidebar.is-collapsed { width: 70px; }
+        .sidebar-header { display: flex; height: 56px; flex: 0 0 auto; align-items: center; justify-content: space-between; padding: 0 8px; }
+        .sidebar-header.is-collapsed-header { justify-content: center; padding: 0; }
+        .brand-wrapper { display: flex; min-width: 0; align-items: center; gap: 10px; }
+        .brand-logo-gem { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; overflow: hidden; border-radius: 12px; background: var(--sb-panel-soft); }
+        .brand-logo-gem img { display: block; width: 100%; height: 100%; object-fit: cover; }
+        .brand-text-container { display: flex; min-width: 0; flex-direction: column; line-height: 1.1; }
+        .brand-title { overflow: hidden; color: var(--sb-text); font-size: 13px; font-weight: 600; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+        .brand-subtitle { margin-top: 4px; color: var(--sb-muted); font-size: 8px; font-weight: 500; letter-spacing: .08em; white-space: nowrap; }
+        .icon-action-btn, .collapsed-expand-btn { display: grid; flex: 0 0 auto; place-items: center; border: 0; color: var(--sb-text); background: var(--sb-panel-soft); cursor: pointer; }
+        .icon-action-btn { width: 32px; height: 32px; border-radius: 11px; }
+        .collapsed-expand-btn { width: 44px; height: 44px; margin: 8px auto 0; border-radius: 15px; color: var(--sb-text); background: var(--sb-brand-soft); }
+        .sidebar-nav, .mobile-nav { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; }
+        .sidebar-nav { margin-top: 10px; }
+        .nav-group-list { display: flex; flex-direction: column; gap: 4px; }
+        .nav-group-node { width: 100%; }
+        .nav-parent-btn { position: relative; display: flex; width: 100%; height: 40px; align-items: center; gap: 10px; border: 0; border-radius: 15px; padding: 0 12px; color: var(--sb-text); background: transparent; font-size: 9px; font-weight: 600; text-align: left; cursor: pointer; }
+        .nav-parent-btn:hover, .subnav-btn:hover, .mobile-sub-btn:hover { background: var(--sb-panel-soft); }
+        .nav-parent-btn.active-parent { background: var(--sb-brand-soft); }
+        .is-collapsed-list .nav-parent-btn { width: 44px; height: 44px; justify-content: center; margin: 0 auto; padding: 0; }
+        .nav-icon-box { display: grid; width: 20px; height: 20px; flex: 0 0 auto; place-items: center; }
+        .nav-label-text, .subnav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .nav-label-text { flex: 1; }
+        .chevron-indicator { color: var(--sb-muted); transition: transform .3s ease-out; }
+        .chevron-indicator.rotate-up { transform: rotate(180deg); }
+        .active-pill-bar { position: absolute; top: 8px; right: 0; width: 3px; height: 24px; border-radius: 999px; background: var(--sb-brand); }
+        .collapsed-active-pill { top: 8px; height: 28px; }
+        .subnav-container { position: relative; margin-left: 20px; overflow: hidden; padding-left: 20px; }
+        .subnav-container::before { position: absolute; top: 0; bottom: 15px; left: 0; width: 1px; background: color-mix(in srgb, var(--sb-muted) 28%, transparent); content: ""; }
+        .subnav-list { display: flex; flex-direction: column; gap: 1px; padding: 4px 0; }
+        .subnav-btn { position: relative; display: flex; width: 100%; height: 30px; align-items: center; gap: 8px; border: 0; border-radius: 11px; padding: 0 8px; color: var(--sb-text); background: transparent; font-size: 8px; font-weight: 500; text-align: left; cursor: pointer; }
+        .subnav-btn.active-sub, .mobile-sub-btn.active-mobile-sub { background: var(--sb-panel-soft); }
+        .tree-branch-svg { position: absolute; top: 0; left: -20px; width: 20px; height: 30px; color: color-mix(in srgb, var(--sb-muted) 28%, transparent); pointer-events: none; }
+        .sidebar-footer { margin-top: 8px; flex: 0 0 auto; }
+        .signout-btn { display: flex; width: 100%; height: 44px; align-items: center; justify-content: center; gap: 10px; border: 0; border-radius: 15px; padding: 0 16px; color: var(--sb-danger); background: var(--sb-danger-soft); font-size: 9px; font-weight: 600; cursor: pointer; }
+        .desktop-sidebar.is-collapsed .signout-btn { width: 44px; padding: 0; margin: 0 auto; }
+        .mobile-overlay { position: fixed; inset: 0; z-index: 50; display: flex; }
+        .mobile-backdrop { position: fixed; inset: 0; z-index: 50; border: 0; background: var(--dialog-overlay); backdrop-filter: blur(4px); cursor: pointer; }
+        .mobile-drawer { position: fixed; inset: 12px auto 12px 12px; z-index: 60; display: flex; width: min(86vw,290px); flex-direction: column; overflow: hidden; border-radius: 30px; padding: 12px; background: var(--sb-panel); box-shadow: var(--sb-shadow); animation: sidebar-drawer-in .42s cubic-bezier(.16,1,.3,1); }
+        .mobile-drawer-header { display: flex; height: 56px; flex: 0 0 auto; align-items: center; justify-content: space-between; padding: 0 8px; }
+        .mobile-nav { margin-top: 4px; }
+        .mobile-nav-groups { display: flex; flex-direction: column; gap: 12px; }
+        .mobile-group-node { width: 100%; }
+        .mobile-nav-group-label { margin: 0; padding: 0 12px 4px; color: var(--sb-muted); font-size: 7px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+        .mobile-sub-btn { display: flex; width: 100%; height: 32px; align-items: center; gap: 10px; border: 0; border-radius: 12px; padding: 0 12px; color: var(--sb-text); background: transparent; font-size: 8px; font-weight: 500; text-align: left; cursor: pointer; }
+        .mobile-footer { margin-top: 8px; flex: 0 0 auto; }
+        .mobile-footer .signout-btn { height: 48px; justify-content: flex-start; border-radius: 17px; font-size: 10px; }
+        @keyframes sidebar-subnav-in { from { opacity: 0; max-height: 0; transform: translateY(-4px); } to { opacity: 1; max-height: 500px; transform: translateY(0); } }
+        @keyframes sidebar-drawer-in { from { opacity: 0; transform: translateX(-105%); } to { opacity: 1; transform: translateX(0); } }
+        @media (min-width: 1024px) { .desktop-sidebar { display: flex; } }
+        @media (max-width: 1023px) { .desktop-sidebar { display: none; } }
+      `}</style>
+    </>
+  );
 }
 
 export default OsSidebar;
-
-
-

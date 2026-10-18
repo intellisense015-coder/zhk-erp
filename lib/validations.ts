@@ -8,8 +8,16 @@ const requiredText = (label: string) =>
 export const productSchema = z.object({
   name: requiredText("Product name"),
   sku: requiredText("SKU"),
+  brand: requiredText("Brand"),
+  model: requiredText("Model"),
+  color: requiredText("Color"),
+  description: z.string().trim().max(500, "Description must be 500 characters or less").optional(),
+  imageUrl: z.string().trim().url("Enter a valid image URL").optional().or(z.literal("")),
+  imageSource: z.literal("catalog").optional(),
   category: requiredText("Category"),
-  vendorName: requiredText("Vendor"),
+  vendorName: requiredText("Supplier"),
+  vendorContactNumber: z.string().trim().refine((value) => !value || /^[+()\d\s-]{7,}$/.test(value), "Enter a valid supplier contact number"),
+  vendorCompany: z.string().trim().optional(),
   costPrice: positiveNumber,
   sellingPrice: positiveNumber,
   inStockQuantity: nonNegativeNumber,
@@ -47,13 +55,28 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
-export const twoFactorSchema = z.object({
-  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit verification code"),
-});
-
 export type ProductFormValues = z.infer<typeof productSchema>;
 export type PurchaseFormValues = z.infer<typeof purchaseSchema>;
 export type SaleFormValues = z.infer<typeof saleSchema>;
 export type SaleLineItemFormValues = z.infer<typeof saleLineItemSchema>;
+export type ExchangeFormValues = {
+  mode: "exchange" | "buyback";
+  customerId?: string;
+  customerName: string;
+  customerContactNumber: string;
+  customerCode: string;
+  givenProductId: string;
+  givenQuantity: number;
+  tradeInUnitValue: number;
+  receivedProductId?: string;
+  receivedQuantity?: number;
+  receivedUnitSellingPrice?: number;
+  receiveSource?: "inventory" | "supplier";
+  supplierId?: string;
+  supplierName: string;
+  supplierContactNumber: string;
+  supplierCompany?: string;
+  supplierUnitCost: number;
+  supplierPaidAmount: number;
+};
 export type LoginFormValues = z.infer<typeof loginSchema>;
-export type TwoFactorFormValues = z.infer<typeof twoFactorSchema>;

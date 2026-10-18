@@ -1,83 +1,141 @@
 "use client";
 
-import { CircleDollarSign, Filter, PackagePlus, Truck, X, ArrowRightLeft, Check, Pencil } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ArrowDownLeft, ClipboardList, Filter, PackagePlus, Receipt, Search, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { KpiCard } from "../../../components/erp/kpi-card";
 import { Button } from "../../../components/primitives/button";
-import { Field, Modal, SelectField } from "../../../components/primitives/primitives";
-import { DataTable } from "../../../components/primitives/table";
-import { PurchaseFormModal } from "../../../components/erp/purchase-form-modal";
-import { ProductFormModal } from "../../../components/erp/product-form-modal";
-import { categories, formatCurrency, formatTransactionTime, getMonthOptions, type Product, type Transaction } from "../../../lib/erp-data";
+import { Modal, SelectField } from "../../../components/primitives/primitives";
+import { DataTable, TableBadge } from "../../../components/primitives/table";
+import { formatCompactCurrency, formatCurrency, formatTransactionTime, getMonthOptions, type Transaction } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
-import type { PurchaseFormValues } from "../../../lib/validations";
 
 export default function PurchasesPage() {
-  const { products, transactions, customers, suppliers, supplierPayments, addPurchase, updatePurchase, addProduct, addSupplierPayment, addTransfer } = useErpStore();
-  const monthOptions = getMonthOptions(transactions);
-  const purchaseRecords = transactions.filter((transaction) => transaction.type === "purchase").map((transaction) => ({ ...transaction, time: formatTransactionTime(transaction) }));
-  const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
-  const [productModalOpen, setProductModalOpen] = useState(false);
-  const [productError, setProductError] = useState<string | null>(null);
-  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
-  const [purchaseDraft, setPurchaseDraft] = useState<{ quantity: number; unitCost: number } | null>(null);
-  const [purchaseEditError, setPurchaseEditError] = useState<string | null>(null);
-  const [transferModalOpen, setTransferModalOpen] = useState(false);
-  const [paymentSupplierId, setPaymentSupplierId] = useState<string | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentNote, setPaymentNote] = useState("");
-  const [paymentError, setPaymentError] = useState<string | null>(null);
-  const [kpi, setKpi] = useState<string | null>(null);
-  const [selectedPurchase, setSelectedPurchase] = useState<Transaction | null>(null);
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [vendor, setVendor] = useState("All suppliers");
-  const [category, setCategory] = useState("All categories");
+  const { products, transactions, suppliers, supplierPayments } = useErpStore();
+  const purchases = useMemo(() => transactions.filter((transaction) => transaction.type === "purchase"), [transactions]);
+  const monthOptions = useMemo(() => getMonthOptions(purchases), [purchases]);
+  const supplierOptions = useMemo(() => [
+    { value: "all", label: "All suppliers" },
+    ...Array.from(new Set(purchases.map((purchase) => purchase.party).filter(Boolean))).sort().map((value) => ({ value, label: value })),
+  ], [purchases]);
   const [month, setMonth] = useState("all");
-  const [draftVendor, setDraftVendor] = useState("All suppliers");
-  const [draftCategory, setDraftCategory] = useState("All categories");
+  const [supplier, setSupplier] = useState("all");
   const [draftMonth, setDraftMonth] = useState("all");
-  const [transferKind, setTransferKind] = useState<"supplier-to-customer" | "customer-to-customer">("supplier-to-customer");
-  const [transferFrom, setTransferFrom] = useState("");
-  const [transferTo, setTransferTo] = useState("");
-  const [transferProduct, setTransferProduct] = useState(products[0]?.id ?? "");
-  const [transferQuantity, setTransferQuantity] = useState("1");
-  const [transferAmount, setTransferAmount] = useState("0");
-  const [transferError, setTransferError] = useState<string | null>(null);
-  const monthPurchases = useMemo(() => purchaseRecords.filter((record) => month === "all" || record.month === month), [purchaseRecords, month]);
-  const visible = useMemo(() => monthPurchases.filter((record) => (vendor === "All suppliers" || record.party === vendor) && (category === "All categories" || products.find((product) => product.name === record.name)?.category === category)), [monthPurchases, products, vendor, category]);
-  const spend = monthPurchases.reduce((sum, record) => sum + record.amount, 0);
-  const units = monthPurchases.reduce((sum, record) => sum + record.quantity, 0);
-  const supplierOptions = ["All suppliers", ...suppliers.map((supplier) => supplier.name)];
-  useEffect(() => { if (new URLSearchParams(window.location.search).get("modal") === "add") { const timer = window.setTimeout(() => setPurchaseModalOpen(true), 0); return () => window.clearTimeout(timer); } }, []);
-  useEffect(() => { if (!transferProduct && products[0]) setTransferProduct(products[0].id); }, [products, transferProduct]);
-  const savePurchase = (values: PurchaseFormValues) => { const result = addPurchase(values); if (result.ok) setPurchaseModalOpen(false); };
-  const startEditingPurchase = (record: Transaction) => { setEditingPurchaseId(record.id); setPurchaseDraft({ quantity: record.quantity, unitCost: record.unitCost ?? (record.quantity ? record.amount / record.quantity : 0) }); setPurchaseEditError(null); };
-  const saveEditingPurchase = (record: Transaction) => { if (!purchaseDraft) return; const result = updatePurchase(record.id, purchaseDraft); if (!result.ok) { setPurchaseEditError(result.message); return; } setEditingPurchaseId(null); setPurchaseDraft(null); setPurchaseEditError(null); };
-  const saveProduct = (values: import("../../../lib/validations").ProductFormValues) => { const result = addProduct(values); if (!result.ok) { setProductError(result.message); return result; } setProductError(null); setProductModalOpen(false); setPurchaseModalOpen(true); return result; };
-  const applyFilters = () => { setVendor(draftVendor); setCategory(draftCategory); setMonth(draftMonth); setFilterOpen(false); };
-  const clearFilters = () => { setVendor("All suppliers"); setCategory("All categories"); setMonth("all"); setDraftVendor("All suppliers"); setDraftCategory("All categories"); setDraftMonth("all"); };
-  const ledger = suppliers.map((supplier) => { const total = purchaseRecords.filter((record) => record.supplierId === supplier.id).reduce((sum, record) => sum + record.amount, 0); const paid = supplierPayments.filter((payment) => payment.supplierId === supplier.id).reduce((sum, payment) => sum + payment.amount, 0); return { supplier, total, paid, outstanding: Math.max(0, total - paid) }; }).filter((entry) => entry.total > 0 || entry.paid > 0);
-  const selectedPaymentSupplier = ledger.find((entry) => entry.supplier.id === paymentSupplierId);
-  const submitPayment = () => { if (!paymentSupplierId) return; const result = addSupplierPayment({ supplierId: paymentSupplierId, amount: Number(paymentAmount), note: paymentNote }); if (!result.ok) { setPaymentError(result.message); return; } setPaymentError(null); setPaymentAmount(""); setPaymentNote(""); setPaymentSupplierId(null); };
-  const submitTransfer = () => { const result = addTransfer({ transferKind, fromEntity: transferFrom, toEntity: transferTo, productId: transferProduct, quantity: Number(transferQuantity), amount: Number(transferAmount) }); if (!result.ok) { setTransferError(result.message); return; } setTransferError(null); setTransferModalOpen(false); setTransferFrom(""); setTransferTo(""); setTransferQuantity("1"); setTransferAmount("0"); };
-  const transferFromOptions = transferKind === "supplier-to-customer" ? suppliers.map((supplier) => ({ value: supplier.name, label: supplier.name })) : customers.map((customer) => ({ value: customer.name, label: customer.name }));
-  const transferToOptions = customers.map((customer) => ({ value: customer.name, label: customer.name }));
+  const [draftSupplier, setDraftSupplier] = useState("all");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [selected, setSelected] = useState<Transaction | null>(null);
+  const [search, setSearch] = useState("");
 
-  return <div className="erp-content">
-    <div className="erp-page-heading"><div><h1 className="erp-page-title">Purchases</h1></div><div className="flex gap-2"><Button variant="secondary" onClick={() => { setDraftVendor(vendor); setDraftCategory(category); setDraftMonth(month); setFilterOpen(true); }}><Filter size={15} />Filters</Button><Button variant="secondary" onClick={() => setTransferModalOpen(true)}><ArrowRightLeft size={15} />Log transfer</Button><Button onClick={() => setPurchaseModalOpen(true)}><PackagePlus size={15} />Add stock</Button></div></div>
-    <div className="erp-grid-4 purchase-kpis mb-[18px]"><Kpi label="Total purchases" value={formatCurrency(spend)} note="Supplier spend recorded" icon={<CircleDollarSign size={16} />} onClick={() => setKpi("spend")} /><Kpi label="Units received" value={String(units)} note="Across purchase entries" icon={<PackagePlus size={16} />} onClick={() => setKpi("units")} /></div>
-    <div className="solexa-filter-chips">{month !== "all" && <FilterChip label={monthOptions.find((option) => option.value === month)?.label ?? month} onRemove={() => { setMonth("all"); setDraftMonth("all"); }} />}{vendor !== "All suppliers" && <FilterChip label={vendor} onRemove={() => { setVendor("All suppliers"); setDraftVendor("All suppliers"); }} />}{category !== "All categories" && <FilterChip label={category} onRemove={() => { setCategory("All categories"); setDraftCategory("All categories"); }} />}{(month !== "all" || vendor !== "All suppliers" || category !== "All categories") && <button type="button" className="solexa-filter-clear" onClick={clearFilters}>Clear all</button>}</div>
-    <section className="erp-card"><div className="erp-card-header"><div><h2 className="erp-card-title">Purchase ledger</h2><p className="erp-card-subtitle">Incoming stock and supplier cost basis. Quantity and unit cost can be edited after recording.</p></div></div>{purchaseEditError && <p className="mx-5 mt-4 rounded-xl bg-[var(--error-glow)] px-3 py-2 text-[10px] font-bold text-[var(--error)]">{purchaseEditError}</p>}<DataTable data={visible} keyExtractor={(record) => record.id} onRowClick={(record) => { if (!editingPurchaseId) setSelectedPurchase(record); }} searchPlaceholder="Search supplier or product..." searchKeys={["party", "name"]} emptyText="No purchases match these filters." paginationOnly columns={[{ key: "party", header: "Supplier", sortable: true, accessor: (record) => <span className="font-bold text-[var(--text-primary)]">{record.party}</span> }, { key: "name", header: "Product", sortable: true, accessor: (record) => <div className="font-semibold text-[var(--text-primary)]">{record.name}</div> }, { key: "quantity", header: "Qty", sortable: true, align: "right", accessor: (record) => editingPurchaseId === record.id && purchaseDraft ? <input className="table-inline-input" type="number" min={1} value={purchaseDraft.quantity} onClick={(event) => event.stopPropagation()} onChange={(event) => setPurchaseDraft({ ...purchaseDraft, quantity: Number(event.target.value) })} aria-label="Edit purchase quantity" /> : record.quantity }, { key: "unitCost", header: "Unit cost", sortable: true, align: "right", accessor: (record) => editingPurchaseId === record.id && purchaseDraft ? <input className="table-inline-input" type="number" min={1} value={purchaseDraft.unitCost} onClick={(event) => event.stopPropagation()} onChange={(event) => setPurchaseDraft({ ...purchaseDraft, unitCost: Number(event.target.value) })} aria-label="Edit purchase unit cost" /> : formatCurrency(record.unitCost ?? (record.quantity ? record.amount / record.quantity : 0)) }, { key: "amount", header: "Purchase total", sortable: true, align: "right", accessor: (record) => <span className="font-semibold value-negative">-{formatCurrency(editingPurchaseId === record.id && purchaseDraft ? purchaseDraft.quantity * purchaseDraft.unitCost : record.amount)}</span> }, { key: "time", header: "Recorded", sortable: true, accessor: (record) => record.time }, { key: "actions", header: "Actions", align: "right", accessor: (record) => editingPurchaseId === record.id ? <div className="table-row-actions" onClick={(event) => event.stopPropagation()}><button type="button" className="table-icon-button" aria-label="Save purchase edit" onClick={() => saveEditingPurchase(record)}><Check size={14} /></button><button type="button" className="table-icon-danger" aria-label="Cancel purchase edit" onClick={() => { setEditingPurchaseId(null); setPurchaseDraft(null); setPurchaseEditError(null); }}><X size={14} /></button></div> : <button type="button" className="table-icon-button" aria-label={`Edit purchase for ${record.party}`} onClick={(event) => { event.stopPropagation(); startEditingPurchase(record); }}><Pencil size={14} /></button> }]} /></section>
-    <section className="erp-card supplier-ledger-card"><div className="erp-card-header"><div><h2 className="erp-card-title">Supplier / Vendor Ledger</h2><p className="erp-card-subtitle">Track paid amounts and outstanding supplier balances.</p></div><Truck size={19} className="text-[var(--primary)]" /></div>{ledger.length ? <div className="supplier-ledger-table"><div className="supplier-ledger-head"><span>Supplier</span><span>Total purchases</span><span>Paid</span><span>Outstanding</span><span /></div>{ledger.map((entry) => <div className="supplier-ledger-row" key={entry.supplier.id}><div><strong>{entry.supplier.name}</strong><small>{entry.supplier.company || entry.supplier.contactNumber || "Supplier record"}</small></div><span>{formatCurrency(entry.total)}</span><span className="value-positive">{formatCurrency(entry.paid)}</span><span className={entry.outstanding ? "value-negative font-bold" : "value-positive font-bold"}>{formatCurrency(entry.outstanding)}</span><Button variant="secondary" disabled={!entry.outstanding} onClick={() => { setPaymentSupplierId(entry.supplier.id); setPaymentError(null); }}>Record payment</Button></div>)}</div> : <div className="p-5 text-xs text-[var(--text-muted)]">Supplier balances will appear after purchases are recorded.</div>}</section>
-    <PurchaseFormModal open={purchaseModalOpen} onClose={() => setPurchaseModalOpen(false)} onSubmit={savePurchase} onAddProduct={() => { setPurchaseModalOpen(false); setProductError(null); setProductModalOpen(true); }} />
-    <ProductFormModal open={productModalOpen} onClose={() => { setProductModalOpen(false); setPurchaseModalOpen(true); setProductError(null); }} onSubmit={saveProduct} serverError={productError} />
-    <Modal open={Boolean(kpi)} title={kpi === "spend" ? "Purchase spend" : "Units received"} description="Purchase KPI details." onClose={() => setKpi(null)}><div className="grid gap-3 p-5">{kpi === "spend" && purchaseRecords.map((record) => <InfoRow key={record.id} label={record.name} value={formatCurrency(record.amount)} tone="error" />)}{kpi === "units" && <InfoRow label="Units received" value={String(units)} />}</div></Modal>
-    {selectedPurchase && <Modal title={selectedPurchase.name} description={`Purchase · ${selectedPurchase.time}`} onClose={() => setSelectedPurchase(null)}><div className="grid grid-cols-2 gap-3 p-5"><InfoRow label="Supplier" value={selectedPurchase.party} /><InfoRow label="Quantity" value={String(selectedPurchase.quantity)} /><InfoRow label="Purchase total" value={formatCurrency(selectedPurchase.amount)} tone="error" /><InfoRow label="Paid" value={formatCurrency(selectedPurchase.paidAmount ?? 0)} tone="success" /><InfoRow label="Outstanding" value={formatCurrency(selectedPurchase.outstandingAmount ?? selectedPurchase.amount)} tone="error" /></div></Modal>}
-    <Modal open={filterOpen} title="Filter purchases" description="Narrow the supplier ledger by month, supplier, or product category." onClose={() => setFilterOpen(false)}><div className="filter-inline-row p-5"><SelectField label="Month" searchable value={draftMonth} onChange={(event) => setDraftMonth(event.target.value)}>{monthOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectField><SelectField label="Supplier" searchable value={draftVendor} onChange={(event) => setDraftVendor(event.target.value)}>{supplierOptions.map((item) => <option key={item} value={item}>{item}</option>)}</SelectField><SelectField label="Category" searchable value={draftCategory} onChange={(event) => setDraftCategory(event.target.value)}>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</SelectField><div className="primitive-dialog-actions px-0 pb-0 filter-inline-actions"><Button variant="secondary" className="cancel-button" onClick={() => setFilterOpen(false)}>Cancel</Button><Button onClick={applyFilters}>Apply filters</Button></div></div></Modal>
-    <Modal open={Boolean(paymentSupplierId)} title="Record supplier payment" description={selectedPaymentSupplier ? `${selectedPaymentSupplier.supplier.name} · ${formatCurrency(selectedPaymentSupplier.outstanding)} outstanding` : "Apply a payment to the supplier ledger."} onClose={() => setPaymentSupplierId(null)}><div className="p-5"><Field label="Payment amount" type="number" min={1} value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} placeholder="e.g. 100000" /><Field label="Note (optional)" value={paymentNote} onChange={(event) => setPaymentNote(event.target.value)} placeholder="e.g. Bank transfer" />{paymentError && <p className="mt-2 text-[10px] font-bold text-[var(--error)]">{paymentError}</p>}<div className="primitive-dialog-actions px-0 pb-0"><Button variant="secondary" className="cancel-button" onClick={() => setPaymentSupplierId(null)}>Cancel</Button><Button onClick={submitPayment}>Save payment</Button></div></div></Modal>
-    <Modal open={transferModalOpen} title="Log direct transfer" description="Record stock or value moving directly between two entities." onClose={() => setTransferModalOpen(false)}><div className="grid gap-1 p-5 sm:grid-cols-2"><SelectField label="Transfer type" value={transferKind} onChange={(event) => { const nextKind = event.target.value as typeof transferKind; setTransferKind(nextKind); setTransferFrom(""); setTransferTo(""); setTransferError(null); }}><option value="supplier-to-customer">Supplier to customer</option><option value="customer-to-customer">Customer to customer</option></SelectField><SelectField label="Product" searchable searchPlaceholder="Search products..." value={transferProduct} onChange={(event) => setTransferProduct(event.target.value)}>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</SelectField><SelectField label="From entity" searchable searchPlaceholder={transferKind === "supplier-to-customer" ? "Search suppliers..." : "Search customers..."} value={transferFrom} onChange={(event) => setTransferFrom(event.target.value)}>{transferFromOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectField><SelectField label="To entity" searchable searchPlaceholder="Search customers..." value={transferTo} onChange={(event) => setTransferTo(event.target.value)}>{transferToOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectField><Field label="Quantity" type="number" min={1} value={transferQuantity} onChange={(event) => setTransferQuantity(event.target.value)} /><Field label="Value" type="number" min={0} value={transferAmount} onChange={(event) => setTransferAmount(event.target.value)} />{transferError && <p className="text-[10px] font-bold text-[var(--error)] sm:col-span-2">{transferError}</p>}<div className="primitive-dialog-actions px-0 pb-0 sm:col-span-2"><Button variant="secondary" className="cancel-button" onClick={() => setTransferModalOpen(false)}>Cancel</Button><Button onClick={submitTransfer}>Log transfer</Button></div></div></Modal>
-  </div>;
+  const visible = useMemo(() => purchases.filter((purchase) => {
+    const matchesMonth = month === "all" || purchase.month === month;
+    const matchesSupplier = supplier === "all" || purchase.party === supplier;
+    return matchesMonth && matchesSupplier;
+  }), [month, purchases, supplier]);
+  const searched = useMemo(() => visible.filter((purchase) => `${purchase.name} ${purchase.party} ${purchase.supplierCompany ?? ""}`.toLowerCase().includes(search.trim().toLowerCase())), [search, visible]);
+  const totalPurchased = useMemo(() => purchases.reduce((sum, purchase) => sum + purchase.amount, 0), [purchases]);
+  const totalUnits = useMemo(() => purchases.reduce((sum, purchase) => sum + purchase.quantity, 0), [purchases]);
+  const totalPaid = useMemo(() => supplierPayments.reduce((sum, payment) => sum + payment.amount, 0), [supplierPayments]);
+  const outstanding = useMemo(() => suppliers.reduce((sum, supplierRecord) => {
+    const purchased = purchases.filter((purchase) => purchase.supplierId === supplierRecord.id || purchase.party === supplierRecord.name).reduce((supplierTotal, purchase) => supplierTotal + purchase.amount, 0);
+    const paid = supplierPayments.filter((payment) => payment.supplierId === supplierRecord.id).reduce((supplierTotal, payment) => supplierTotal + payment.amount, 0);
+    return sum + Math.max(0, purchased + (supplierRecord.openingBalance ?? 0) - paid);
+  }, 0), [purchases, supplierPayments, suppliers]);
+
+  const applyFilter = () => {
+    setMonth(draftMonth);
+    setSupplier(draftSupplier);
+    setFilterOpen(false);
+  };
+  const clearFilter = () => {
+    setMonth("all");
+    setSupplier("all");
+    setDraftMonth("all");
+    setDraftSupplier("all");
+  };
+
+  return (
+    <div className="erp-content">
+      <div className="erp-page-heading">
+        <div>
+          <h1 className="erp-page-title">Purchase history</h1>
+          <p className="erp-page-subtitle">Review stock received from suppliers and its purchase history.</p>
+        </div>
+        <Button variant="secondary" onClick={() => { setDraftMonth(month); setDraftSupplier(supplier); setFilterOpen(true); }}>
+          <Filter size={15} />
+          Filters
+        </Button>
+      </div>
+
+      <div className="solexa-filter-chips">
+        {month !== "all" && <span className="solexa-filter-chip">{monthOptions.find((option) => option.value === month)?.label ?? month}<button type="button" onClick={() => { setMonth("all"); setDraftMonth("all"); }} aria-label="Remove month filter"><X size={13} /></button></span>}
+        {supplier !== "all" && <span className="solexa-filter-chip">{supplier}<button type="button" onClick={() => { setSupplier("all"); setDraftSupplier("all"); }} aria-label="Remove supplier filter"><X size={13} /></button></span>}
+        {(month !== "all" || supplier !== "all") && <button type="button" className="solexa-filter-clear" onClick={clearFilter}>Clear all</button>}
+      </div>
+
+      <section className="erp-grid-4 mb-[18px]">
+        <KpiCard label="Purchase records" value={String(purchases.length)} note="Recorded supplier purchases" icon={<ClipboardList size={18} />} />
+        <KpiCard label="Purchased value" value={formatCompactCurrency(totalPurchased)} note="Total stock purchase value" icon={<Receipt size={18} />} tone="error" />
+        <KpiCard label="Units received" value={totalUnits.toLocaleString("en-PK")} note="Units added to inventory" icon={<PackagePlus size={18} />} tone="success" />
+        <KpiCard label="Outstanding" value={formatCompactCurrency(outstanding)} note={`${formatCurrency(totalPaid)} paid to suppliers`} icon={<ArrowDownLeft size={18} />} tone="error" />
+      </section>
+
+      <label className="inventory-search-bar">
+        <Search size={15} />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search product or supplier..." aria-label="Search product or supplier" />
+        {search && <button type="button" onClick={() => setSearch("")} aria-label="Clear search"><X size={13} /></button>}
+      </label>
+
+      <section className="erp-card">
+        <div className="erp-card-header">
+          <div>
+            <h2 className="erp-card-title">All purchases</h2>
+            <p className="erp-card-subtitle">{searched.length} purchase record{searched.length === 1 ? "" : "s"} in the selected period. Supplier payments are tracked separately.</p>
+          </div>
+          <Receipt size={19} className="text-[var(--primary)]" />
+        </div>
+        <DataTable
+          className="inventory-table"
+          data={searched}
+          searchable={false}
+          paginationOnly
+          keyExtractor={(purchase) => purchase.id}
+          emptyText="No purchase records found. Add stock from Inventory to create purchase history."
+          columns={[
+            { key: "name", header: "Product", width: "14.2857%", sortable: true, accessor: (purchase) => <div><p className="font-semibold text-[var(--text-primary)]">{purchase.name}</p><p className="mt-1 text-[10px] font-medium text-[var(--text-secondary)]">{products.find((product) => product.id === purchase.productId)?.color || "Unspecified"}</p></div> },
+            { key: "party", header: "Supplier", width: "14.2857%", sortable: true, accessor: (purchase) => <span className="font-medium text-[var(--text-secondary)]">{purchase.party}</span> },
+            { key: "quantity", header: "Qty", width: "14.2857%", sortable: true, align: "right", accessor: (purchase) => `${purchase.quantity} units` },
+            { key: "unitCost", header: "Unit cost", width: "14.2857%", sortable: true, align: "right", accessor: (purchase) => formatCurrency(purchase.unitCost ?? (purchase.quantity ? purchase.amount / purchase.quantity : 0)) },
+            { key: "amount", header: "Purchased", width: "14.2857%", sortable: true, align: "right", accessor: (purchase) => <span className="font-bold text-[var(--text-primary)]">{formatCurrency(purchase.amount)}</span> },
+            { key: "outstandingAmount", header: "Outstanding", width: "14.2857%", sortable: true, align: "right", accessor: (purchase) => <TableBadge tone={(purchase.outstandingAmount ?? purchase.amount) > 0 ? "danger" : "success"}>{formatCurrency(purchase.outstandingAmount ?? Math.max(0, purchase.amount - (purchase.paidAmount ?? 0)))}</TableBadge> },
+            { key: "date", header: "Recorded", width: "14.2857%", sortable: true, accessor: (purchase) => <span className="text-[var(--text-muted)]">{formatTransactionTime(purchase)}</span> },
+          ]}
+        />
+      </section>
+
+      <Modal open={filterOpen} title="Filter purchases" description="Choose the supplier and month you want to review." onClose={() => setFilterOpen(false)}>
+        <div className="p-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SelectField label="Supplier" value={draftSupplier} onChange={(event) => setDraftSupplier(event.target.value)}>{supplierOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectField>
+            <SelectField label="Month" value={draftMonth} onChange={(event) => setDraftMonth(event.target.value)}>{monthOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectField>
+          </div>
+          <div className="primitive-dialog-actions px-0 pb-0">
+            <Button variant="secondary" className="cancel-button !bg-[var(--error)] !text-white" onClick={() => setFilterOpen(false)}>Cancel</Button>
+            <Button variant="brand" className="inventory-add-product-button !text-white" onClick={applyFilter}>Apply filters</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={Boolean(selected)} title="Purchase details" description={selected ? `${selected.name} · ${formatTransactionTime(selected)}` : undefined} onClose={() => setSelected(null)}>
+        {selected && <PurchaseDetail purchase={selected} />}
+      </Modal>
+    </div>
+  );
 }
 
-function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) { return <span className="inline-flex items-center gap-1 rounded-full bg-[var(--primary-soft)] px-2.5 py-1 text-[11px] font-bold text-[var(--primary)]">{label}<button type="button" aria-label={`Remove ${label} filter`} onClick={onRemove}><X size={13} /></button></span>; }
-function Kpi({ label, value, note, icon, onClick }: { label: string; value: string; note: string; icon: React.ReactNode; onClick: () => void }) { return <button type="button" onClick={onClick} className="erp-card erp-metric w-full text-left transition hover:-translate-y-0.5 hover:border-[var(--primary)]"><div className="erp-metric-top"><span className="erp-metric-icon">{icon}</span></div><p className="erp-metric-label">{label}</p><p className="erp-metric-value">{value}</p><p className="erp-metric-note">{note}</p></button>; }
-function InfoRow({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "error" | "success" }) { return <div className="flex items-center justify-between gap-4 rounded-xl bg-[var(--surface-soft)] p-3"><span className="text-xs text-[var(--text-muted)]">{label}</span><span className={`text-sm font-bold ${tone === "error" ? "text-[var(--error)]" : tone === "success" ? "text-[var(--success)]" : "text-[var(--text-primary)]"}`}>{value}</span></div>; }
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-xl bg-[var(--surface-soft)] p-3"><p className="text-[10px] text-[var(--text-muted)]">{label}</p><p className="mt-1 text-sm font-bold">{value}</p></div>;
+}
+
+function PurchaseDetail({ purchase }: { purchase: Transaction }) {
+  const outstanding = purchase.outstandingAmount ?? Math.max(0, purchase.amount - (purchase.paidAmount ?? 0));
+  return <div className="p-5"><div className="grid grid-cols-2 gap-3"><InfoRow label="Supplier" value={purchase.party} /><InfoRow label="Product" value={purchase.name} /><InfoRow label="Quantity" value={String(purchase.quantity)} /><InfoRow label="Unit cost" value={formatCurrency(purchase.unitCost ?? (purchase.quantity ? purchase.amount / purchase.quantity : 0))} /><InfoRow label="Purchase amount" value={formatCurrency(purchase.amount)} /><InfoRow label="Paid at purchase" value={formatCurrency(purchase.paidAmount ?? 0)} /><InfoRow label="Outstanding at purchase" value={formatCurrency(outstanding)} /><InfoRow label="Recorded" value={formatTransactionTime(purchase)} /></div><div className="mt-4 rounded-xl bg-[var(--surface-soft)] p-3 text-xs text-[var(--text-muted)]">Supplier payments are recorded separately and update the supplier&apos;s current balance.</div></div>;
+}

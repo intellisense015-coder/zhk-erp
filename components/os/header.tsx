@@ -6,8 +6,6 @@ import {
   Boxes,
   ClipboardList,
   Search,
-  GitBranch,
-  ChevronDown,
   ChevronRight,
   UserRound,
   Settings2,
@@ -15,13 +13,14 @@ import {
   Sun,
   Moon,
   Menu,
-  Check,
   LayoutDashboard,
   LucideIcon,
   ShoppingCart,
   Truck,
   Users,
   Building2,
+  Grid2X2,
+  Plus,
 } from "lucide-react";
 import { formatCurrency, formatTransactionTime } from "../../lib/erp-data";
 import { useErpStore } from "../../lib/erp-store";
@@ -29,12 +28,6 @@ import { useErpStore } from "../../lib/erp-store";
 // ==========================================
 // Types
 // ==========================================
-
-export interface BranchItem {
-  id: string;
-  name: string;
-  city?: string;
-}
 
 export interface SearchResultItem {
   label: string;
@@ -48,27 +41,18 @@ export interface DashboardHeaderProps {
   userName?: string;
   userRole?: string;
   pageTitle?: string;
-  branches?: BranchItem[];
-  selectedBranchId?: string;
-  onBranchChange?: (branchId: string) => void;
   onOpenMobileMenu?: () => void;
   onNavigate?: (href: string) => void;
   onSignOut?: () => void;
 }
 
-type OpenDropdown = "branch" | "profile" | null;
-
-// ==========================================
-// Default Mock Data
-// ==========================================
-
-const DEFAULT_BRANCHES: BranchItem[] = [];
+type OpenDropdown = "quick" | "profile" | null;
 
 const DEFAULT_SEARCH_MODULES: SearchResultItem[] = [
   { label: "Dashboard", href: "/dashboard", category: "Dasgboard", icon: LayoutDashboard },
-  { label: "Inventory", href: "/inventory", category: "Trading", icon: Boxes },
-  { label: "Sales", href: "/sales", category: "Trading", icon: ShoppingCart },
-  { label: "Purchases", href: "/purchases", category: "Trading", icon: Truck },
+  { label: "POS", href: "/pos", category: "Sales", icon: ShoppingCart },
+  { label: "Inventory", href: "/inventory", category: "Inventory", icon: Boxes },
+  { label: "Sales", href: "/sales", category: "Sales", icon: ShoppingCart },
   { label: "Reports", href: "/reports", category: "Insights", icon: BarChart3 },
   { label: "Transactions", href: "/transactions", category: "Insights", icon: ClipboardList },
   { label: "Low stock", href: "/low-stock", category: "Operations", icon: Boxes },
@@ -91,38 +75,29 @@ export function OsHeader({
   userName = "Sohaib Asgher",
   userRole = "Administrator",
   pageTitle = "Accounts",
-  branches = DEFAULT_BRANCHES,
-  selectedBranchId = "",
-  onBranchChange,
   onOpenMobileMenu,
   onNavigate,
   onSignOut,
 }: DashboardHeaderProps) {
   const { products, transactions, customers, suppliers } = useErpStore();
-  const [activeBranchId, setActiveBranchId] = useState(selectedBranchId);
   const [openDropdown, setOpenDropdown] = useState<OpenDropdown>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
-  const [branchSearch, setBranchSearch] = useState("");
   const [isScrolled, setIsScrolled] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => typeof document !== "undefined" && (document.documentElement.classList.contains("dark") || document.documentElement.getAttribute("data-theme") === "dark"));
+  // Keep the server render and the first client render identical. The saved
+  // theme is applied in the effect below after hydration has completed.
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   const headerRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const toggleTheme = () => {
-    const nextState = !isDarkMode;
-    setIsDarkMode(nextState);
-    if (nextState) {
-      document.documentElement.classList.add("dark");
-      document.documentElement.setAttribute("data-theme", "dark");
-      window.localStorage.setItem("solexa-theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      document.documentElement.setAttribute("data-theme", "light");
-      window.localStorage.setItem("solexa-theme", "light");
-    }
-    window.dispatchEvent(new CustomEvent("solexa-theme-change", { detail: nextState ? "dark" : "light" }));
+  const applyTheme = (theme: "light" | "dark") => {
+    const dark = theme === "dark";
+    setIsDarkMode(dark);
+    document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.setAttribute("data-theme", theme);
+    window.localStorage.setItem("solexa-theme", theme);
+    window.dispatchEvent(new CustomEvent("solexa-theme-change", { detail: theme }));
   };
 
   // Keyboard shortcut: Ctrl + K (or Cmd + K) to search, Esc to close
@@ -149,6 +124,12 @@ export function OsHeader({
     handleScroll();
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem("solexa-theme");
+    const dark = storedTheme === "dark" || document.documentElement.classList.contains("dark") || document.documentElement.getAttribute("data-theme") === "dark";
+    setIsDarkMode(dark);
   }, []);
 
   useEffect(() => {
@@ -179,27 +160,16 @@ export function OsHeader({
     onNavigate?.(href);
   };
 
-  const handleBranchSelect = (id: string) => {
-    setActiveBranchId(id);
-    setOpenDropdown(null);
-    onBranchChange?.(id);
-  };
-
   const searchableRecords: SearchResultItem[] = [
     ...products.map((product) => ({ label: product.name, href: "/inventory", category: `Inventory · ${product.category}`, description: `${product.sku} · ${formatCurrency(product.costPrice)} cost · ${formatCurrency(product.sellingPrice)} sale · ${product.inStockQuantity} in stock`, icon: Boxes })),
     ...customers.map((customer) => ({ label: customer.name, href: "/customers", category: "Customers", description: `${customer.code} · ${customer.contactNumber}`, icon: Users })),
     ...suppliers.map((supplier) => ({ label: supplier.name, href: "/suppliers", category: "Suppliers", description: `${supplier.company || "Supplier"} · ${supplier.contactNumber}`, icon: Building2 })),
-    ...transactions.map((transaction) => ({ label: `${transaction.type === "sale" ? "Sale" : transaction.type === "purchase" ? "Purchase" : "Transfer"} · ${transaction.party}`, href: transaction.type === "sale" ? "/sales" : transaction.type === "purchase" ? "/purchases" : "/transactions", category: "Activity", description: `${transaction.name} · ${formatCurrency(transaction.amount)} · ${formatTransactionTime(transaction)}`, icon: transaction.type === "sale" ? ShoppingCart : transaction.type === "purchase" ? Truck : ClipboardList })),
+    ...transactions.map((transaction) => ({ label: `${transaction.source === "customer-trade-in" ? "Trade-in" : transaction.type === "sale" ? "Sale" : transaction.type === "purchase" ? "Supplier stock" : "Transfer"} · ${transaction.party}`, href: transaction.type === "sale" ? "/sales" : "/transactions", category: "Activity", description: `${transaction.name} · ${formatCurrency(transaction.amount)} · ${formatTransactionTime(transaction)}`, icon: transaction.type === "sale" ? ShoppingCart : transaction.type === "purchase" ? Truck : ClipboardList })),
   ];
   const filteredSearchResults = [...DEFAULT_SEARCH_MODULES, ...searchableRecords].filter((item) =>
     `${item.label} ${item.category ?? ""} ${item.description ?? ""}`.toLowerCase().includes(searchQuery.trim().toLowerCase())
   ).slice(0, 8);
 
-  const filteredBranches = branches.filter((b) =>
-    `${b.name} ${b.city || ""}`.toLowerCase().includes(branchSearch.toLowerCase())
-  );
-
-  const selectedBranch = branches.find((b) => b.id === activeBranchId);
   const initials = userName
     .split(/\s+/)
     .map((w) => w[0])
@@ -283,7 +253,7 @@ export function OsHeader({
           )}
         </div>
 
-        {/* Right: Theme, branch scope, and profile */}
+        {/* Right: Theme, quick actions, and profile */}
         <div className="header-actions">
           {/* Mobile Search Icon Trigger */}
           <button
@@ -299,86 +269,15 @@ export function OsHeader({
           </button>
 
           {/* Theme Light/Dark Mode Switcher */}
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="action-icon-btn theme-switch"
-            title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-            aria-label="Toggle theme"
-          >
-            <span className={isDarkMode ? "theme-option" : "theme-option is-active"}><Sun size={13} /><span>Light</span></span>
-            <span className={isDarkMode ? "theme-option is-active" : "theme-option"}><Moon size={13} /><span>Dark</span></span>
-          </button>
+          <div className="theme-toggle theme-switch" aria-label="Appearance">
+            <button type="button" onClick={() => applyTheme("light")} className={`theme-option ${!isDarkMode ? "is-active" : ""}`} aria-label="Use light theme" aria-pressed={!isDarkMode}><Sun size={13} /><span>Light</span></button>
+            <button type="button" onClick={() => applyTheme("dark")} className={`theme-option ${isDarkMode ? "is-active" : ""}`} aria-label="Use dark theme" aria-pressed={isDarkMode}><Moon size={13} /><span>Dark</span></button>
+          </div>
 
-          {/* Branch Switcher Popover */}
-          <div className="dropdown-anchor branch-switcher-wrapper">
-            <button
-              type="button"
-              onClick={() => toggleDropdown("branch")}
-              className={`branch-trigger-btn ${openDropdown === "branch" ? "is-active" : ""}`}
-              aria-label="Select store branch"
-            >
-              <GitBranch size={14} className="branch-icon" />
-              <span className="branch-name">
-                {selectedBranch ? selectedBranch.name : "All Branches"}
-              </span>
-              <ChevronDown
-                size={12}
-                className={`chevron-arrow ${openDropdown === "branch" ? "rotate" : ""}`}
-              />
-            </button>
-
-            {openDropdown === "branch" && (
-              <div className="header-dropdown-card branch-popover">
-                <div className="dropdown-title-row">
-                  <p className="dropdown-main-title">Store Branch Scope</p>
-                  <p className="dropdown-desc">Filter records by shop or view company-wide.</p>
-                </div>
-
-                <div className="dropdown-search-box">
-                  <Search size={13} className="dropdown-search-icon" />
-                  <input
-                    type="text"
-                    value={branchSearch}
-                    onChange={(e) => setBranchSearch(e.target.value)}
-                    placeholder="Search locations..."
-                    className="dropdown-input"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="branch-options-list">
-                  <button
-                    type="button"
-                    onClick={() => handleBranchSelect("")}
-                    className={`branch-option-item ${!activeBranchId ? "selected" : ""}`}
-                  >
-                    <GitBranch size={14} />
-                    <div className="branch-meta">
-                      <span className="branch-opt-title">All Branches (Global)</span>
-                      <span className="branch-opt-sub">Consolidated accounting</span>
-                    </div>
-                    {!activeBranchId && <Check size={14} className="opt-check" />}
-                  </button>
-
-                  {filteredBranches.map((b) => (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() => handleBranchSelect(b.id)}
-                      className={`branch-option-item ${activeBranchId === b.id ? "selected" : ""}`}
-                    >
-                      <GitBranch size={14} />
-                      <div className="branch-meta">
-                        <span className="branch-opt-title">{b.name}</span>
-                        {b.city && <span className="branch-opt-sub">{b.city}</span>}
-                      </div>
-                      {activeBranchId === b.id && <Check size={14} className="opt-check" />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+          {/* Quick actions */}
+          <div className="dropdown-anchor quick-action-wrapper">
+            <button type="button" onClick={() => toggleDropdown("quick")} aria-label="Quick actions" aria-expanded={openDropdown === "quick"} className={`quick-action-trigger-btn ${openDropdown === "quick" ? "is-active" : ""}`}><Grid2X2 size={14} /><span className="quick-action-text">Quick actions</span></button>
+            {openDropdown === "quick" && <div className="header-dropdown-card quick-popover"><p className="notif-title">Quick actions</p><div className="quick-grid"><button type="button" className="quick-card-btn" onClick={() => { onNavigate?.("/inventory/new"); setOpenDropdown(null); }}><span className="quick-icon-box"><Plus size={15} /></span><span className="quick-card-info"><span className="quick-card-title">Add product</span><span className="quick-card-desc">Create a new inventory item</span></span></button><button type="button" className="quick-card-btn" onClick={() => { onNavigate?.("/sales"); setOpenDropdown(null); }}><span className="quick-icon-box"><ShoppingCart size={15} /></span><span className="quick-card-info"><span className="quick-card-title">New sale</span><span className="quick-card-desc">Record a customer sale</span></span></button></div></div>}
           </div>
 
           {/* Profile Dropdown */}
@@ -394,52 +293,57 @@ export function OsHeader({
 
             {openDropdown === "profile" && (
               <div className="header-dropdown-card profile-popover">
-                <div className="profile-user-summary">
-                  <div className="user-big-avatar">{initials}</div>
-                  <div className="user-details">
-                    <span className="user-full-name">{userName}</span>
-                    <span className="user-role-badge">{userRole}</span>
+                <div className="glass-specular-spline" />
+                <div className="glass-surface-grain" />
+
+                <div className="glass-interactive-container">
+                  <div className="profile-user-summary">
+                    <div className="user-big-avatar">{initials}</div>
+                    <div className="user-details">
+                      <span className="user-full-name">{userName}</span>
+                      <span className="user-role-badge">{userRole}</span>
+                    </div>
                   </div>
-                </div>
 
-                <div className="profile-actions-list">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onNavigate?.("/dashboard/users");
-                      setOpenDropdown(null);
-                    }}
-                    className="profile-menu-item"
-                  >
-                    <UserRound size={14} />
-                    <span>Users & Permissions</span>
-                  </button>
+                  <div className="profile-actions-list">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigate?.("/dashboard/users");
+                        setOpenDropdown(null);
+                      }}
+                      className="profile-menu-item"
+                    >
+                      <UserRound size={14} className="menu-icon-layer" />
+                      <span>Users & Permissions</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onNavigate?.("/dashboard/settings");
-                      setOpenDropdown(null);
-                    }}
-                    className="profile-menu-item"
-                  >
-                    <Settings2 size={14} />
-                    <span>Settings</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigate?.("/settings");
+                        setOpenDropdown(null);
+                      }}
+                      className="profile-menu-item"
+                    >
+                      <Settings2 size={14} className="menu-icon-layer" />
+                      <span>Settings</span>
+                    </button>
 
-                  <div className="profile-divider" />
+                    <div className="profile-divider" />
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenDropdown(null);
-                      onSignOut?.();
-                    }}
-                    className="profile-menu-item danger-item"
-                  >
-                    <LogOut size={14} />
-                    <span>Sign Out</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenDropdown(null);
+                        onSignOut?.();
+                      }}
+                      className="profile-menu-item danger-item"
+                    >
+                      <LogOut size={14} className="menu-icon-layer" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -453,40 +357,40 @@ export function OsHeader({
       <style jsx global>{`
         /* Design Variables */
         :root {
-          --hdr-bg: rgba(255, 255, 255, 0.85);
-          --hdr-card: #ffffff;
-          --hdr-soft: #f5f3ff;
-          --hdr-soft-hover: #ede9fe;
-          --hdr-border: #e2e8f0;
-          --hdr-text: #1e1b4b;
-          --hdr-muted: #64748b;
-          --hdr-brand: #6657ee;
-          --hdr-brand-soft: #eeecff;
-          --hdr-brand-text: #ffffff;
-          --hdr-danger: #ea6b78;
-          --hdr-danger-soft: rgba(234, 107, 120, 0.12);
-          --hdr-shadow: 0 16px 45px rgba(62, 54, 122, 0.08);
-          --hdr-popover-shadow: 0 24px 60px rgba(45, 42, 78, 0.18);
+          --hdr-bg: color-mix(in srgb, var(--surface) 85%, transparent);
+          --hdr-card: var(--surface-solid);
+          --hdr-soft: var(--surface-soft);
+          --hdr-soft-hover: var(--primary-soft);
+          --hdr-border: var(--border);
+          --hdr-text: var(--text-primary);
+          --hdr-muted: var(--text-muted);
+          --hdr-brand: var(--primary);
+          --hdr-brand-soft: var(--primary-soft);
+          --hdr-brand-text: var(--primary-foreground);
+          --hdr-danger: var(--error);
+          --hdr-danger-soft: var(--error-glow);
+          --hdr-shadow: var(--shadow-md);
+          --hdr-popover-shadow: var(--dialog-shadow);
           --hdr-radius: 18px;
           --hdr-transition: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .dark,
         html[data-theme="dark"] {
-          --hdr-bg: rgba(26, 26, 34, 0.88);
-          --hdr-card: #1f1f28;
-          --hdr-soft: #272733;
-          --hdr-soft-hover: #313140;
-          --hdr-border: #2f2f3f;
-          --hdr-text: #f8fafc;
-          --hdr-muted: #94a3b8;
-          --hdr-brand: #9b92ff;
-          --hdr-brand-soft: rgba(155, 146, 255, 0.16);
-          --hdr-brand-text: #0f0e17;
-          --hdr-danger: #f07e89;
-          --hdr-danger-soft: rgba(240, 126, 137, 0.16);
-          --hdr-shadow: 0 16px 45px rgba(0, 0, 0, 0.4);
-          --hdr-popover-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+          --hdr-bg: color-mix(in srgb, var(--surface) 88%, transparent);
+          --hdr-card: var(--surface-solid);
+          --hdr-soft: var(--surface-soft);
+          --hdr-soft-hover: var(--primary-soft);
+          --hdr-border: var(--border);
+          --hdr-text: var(--text-primary);
+          --hdr-muted: var(--text-muted);
+          --hdr-brand: var(--primary);
+          --hdr-brand-soft: var(--primary-soft);
+          --hdr-brand-text: var(--primary-foreground);
+          --hdr-danger: var(--error);
+          --hdr-danger-soft: var(--error-glow);
+          --hdr-shadow: var(--shadow-md);
+          --hdr-popover-shadow: var(--dialog-shadow);
         }
 
         /* Top Header Container */
@@ -591,16 +495,17 @@ export function OsHeader({
           height: 38px;
           padding: 0 48px 0 34px;
           border-radius: 12px;
-          border: 1px solid var(--hdr-border);
-          background: var(--hdr-soft);
+          border: 0;
+          background: var(--surface-soft);
           color: var(--hdr-text);
           font-size: 11.5px;
           outline: none;
-          transition: all 0.2s ease;
+          box-shadow: none;
+          transition: background-color 0.2s ease, box-shadow 0.2s ease;
         }
 
         .search-input:focus {
-          border-color: var(--hdr-brand);
+          border-color: transparent;
           background: var(--hdr-card);
           box-shadow: 0 0 0 3px var(--hdr-brand-soft);
         }
@@ -612,9 +517,9 @@ export function OsHeader({
         /* The light canvas is very pale, so give the header search its own
            readable surface and a clear focus/edge cue. */
         html:not([data-theme="dark"]) .search-input {
-          background: var(--surface-solid);
-          border-color: var(--input-border);
-          box-shadow: 0 5px 16px rgba(62, 54, 122, 0.09);
+          background: var(--surface-soft);
+          border: 0;
+          box-shadow: none;
         }
 
         html:not([data-theme="dark"]) .search-leading-icon {
@@ -739,7 +644,7 @@ export function OsHeader({
         }
 
         .header-actions > .dropdown-anchor:has(.notif-badge) {
-          display: none;
+          display: block;
         }
 
         .mobile-search-btn {
@@ -780,6 +685,23 @@ export function OsHeader({
           color: var(--hdr-brand);
         }
 
+        .notification-trigger-btn {
+          position: relative;
+          display: grid;
+          width: 32px;
+          height: 32px;
+          place-items: center;
+          border: 0;
+          border-radius: 10px;
+          background: transparent;
+          color: var(--text);
+          cursor: pointer;
+        }
+
+        .notification-trigger-btn:hover {
+          background: var(--surface-soft);
+        }
+
         .notif-badge {
           position: absolute;
           top: -2px;
@@ -791,10 +713,10 @@ export function OsHeader({
           padding: 0 4px;
           border-radius: 9999px;
           background: var(--hdr-danger);
-          color: #ffffff;
+          color: var(--hdr-brand-text);
           font-size: 9px;
           font-weight: 800;
-          box-shadow: 0 2px 6px rgba(234, 107, 120, 0.4);
+          box-shadow: 0 2px 6px var(--hdr-danger-soft);
         }
 
         /* Branch Switcher Button */
@@ -806,22 +728,22 @@ export function OsHeader({
           display: flex;
           align-items: center;
           gap: 6px;
-          height: 36px;
-          padding: 0 10px;
+          min-height: 32px;
+          height: 32px;
+          padding: 0 8px;
           border-radius: 12px;
-          border: 1px solid var(--hdr-border);
-          background: var(--hdr-soft);
-          color: var(--hdr-text);
-          font-size: 11px;
+          border: 0;
+          background: transparent;
+          color: var(--text);
+          font-size: 9px;
           font-weight: 600;
           cursor: pointer;
-          transition: all 0.2s ease;
+          transition: background-color 0.2s ease;
         }
 
         .branch-trigger-btn:hover,
         .branch-trigger-btn.is-active {
-          background: var(--hdr-card);
-          border-color: var(--hdr-brand);
+          background: var(--surface-soft);
         }
 
         .branch-icon {
@@ -865,22 +787,24 @@ export function OsHeader({
           display: flex;
           align-items: center;
           gap: 7px;
+          min-height: 36px;
           height: 36px;
-          padding: 0 16px;
+          padding: 0 10px;
           border-radius: 12px;
-          border: 1px solid transparent;
-          background: var(--brand-soft);
-          color: var(--brand);
-          font-size: 11.5px;
-          font-weight: 500;
+          border: 0;
+          background: var(--surface-soft);
+          color: var(--text);
+          font-size: 10px;
+          font-weight: 700;
           cursor: pointer;
-          transition: all 0.2s ease;
+          transition: background-color 1400ms ease, color 1400ms ease, transform 1400ms ease;
         }
 
         .quick-action-trigger-btn:hover,
         .quick-action-trigger-btn.is-active {
-          background: var(--brand);
-          color: var(--on-brand);
+          background: var(--primary-soft);
+          color: var(--primary);
+          transform: translateY(-1px);
         }
 
         @media (max-width: 1100px) {
@@ -898,11 +822,11 @@ export function OsHeader({
           border-radius: 50%;
           border: none;
           background: var(--brand);
-          color: var(--on-brand);
+          color: var(--primary-foreground);
           font-size: 11.5px;
           font-weight: 500;
           cursor: pointer;
-          box-shadow: 0 4px 12px rgba(102, 87, 238, 0.3);
+          box-shadow: 0 4px 12px var(--primary-glow);
           transition: transform 0.2s ease;
         }
 
@@ -1160,7 +1084,7 @@ export function OsHeader({
 
         .quick-card-btn:hover .quick-icon-box {
           background: var(--brand);
-          color: var(--on-brand);
+          color: var(--primary-foreground);
         }
 
         .quick-card-info {
@@ -1180,90 +1104,159 @@ export function OsHeader({
 
         /* Profile Popover */
         .profile-popover {
-          width: 220px;
-          padding: 8px;
-          background: var(--paper);
-          border-color: var(--line);
-          box-shadow: 0 24px 60px var(--card-shadow);
+          position: absolute;
+          top: calc(100% + 8px);
+          right: 0;
+          width: 230px;
+          padding: 10px;
+          border-radius: 20px;
+          overflow: hidden;
+          box-sizing: border-box;
+          background: linear-gradient(135deg, color-mix(in srgb, var(--surface-solid) 64%, transparent) 0%, color-mix(in srgb, var(--surface-solid) 42%, transparent) 100%);
+          backdrop-filter: blur(28px) saturate(155%);
+          -webkit-backdrop-filter: blur(28px) saturate(155%);
+          border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
+          border-top-color: color-mix(in srgb, #fff 45%, transparent);
+          border-left-color: color-mix(in srgb, #fff 30%, transparent);
+          border-bottom-color: color-mix(in srgb, #000 20%, transparent);
+          box-shadow: inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.25), inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.1), 0 24px 60px -10px color-mix(in srgb, var(--text-primary) 22%, transparent);
+        }
+
+        .glass-specular-spline {
+          position: absolute;
+          top: -30px;
+          right: -20px;
+          width: 140px;
+          height: 90px;
+          transform: rotate(-10deg);
+          background: radial-gradient(ellipse at center, rgba(0, 229, 255, 0.28) 0%, rgba(255, 255, 255, 0.12) 40%, rgba(255, 255, 255, 0) 75%);
+          filter: blur(4px);
+          pointer-events: none;
+          z-index: 1;
+        }
+
+        .glass-surface-grain {
+          position: absolute;
+          inset: 0;
+          opacity: 0.02;
+          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+          pointer-events: none;
+          z-index: 2;
+        }
+
+        .glass-interactive-container {
+          position: relative;
+          z-index: 5;
         }
 
         .profile-user-summary {
           display: flex;
           align-items: center;
-          gap: 10px;
-          padding: 10px;
+          gap: 12px;
+          padding: 10px 12px;
+          box-sizing: border-box;
           border-radius: 12px;
-          background: var(--brand-soft);
-          margin-bottom: 6px;
+          margin-bottom: 8px;
+          background: linear-gradient(135deg, color-mix(in srgb, var(--surface-soft) 55%, transparent), color-mix(in srgb, var(--surface-soft) 30%, transparent));
+          border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
+          border-top-color: color-mix(in srgb, #fff 25%, transparent);
+          box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 15%, transparent), 0 4px 12px -2px rgba(0, 0, 0, 0.08);
         }
 
         .user-big-avatar {
-          width: 32px;
-          height: 32px;
+          display: grid;
+          width: 36px;
+          height: 36px;
+          place-items: center;
           border-radius: 10px;
           background: var(--brand);
-          color: var(--on-brand);
-          display: grid;
-          place-items: center;
-          font-size: 12px;
-          font-weight: 500;
+          color: var(--primary-foreground);
+          font-size: 13px;
+          font-weight: 600;
+          box-shadow: 0 2px 8px color-mix(in srgb, var(--brand) 30%, transparent);
         }
 
         .user-details {
           display: flex;
           flex-direction: column;
+          gap: 1px;
         }
 
         .user-full-name {
-          font-size: 11px;
-          font-weight: 700;
           color: var(--ink);
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: -0.1px;
         }
 
         .user-role-badge {
-          font-size: 8.5px;
           color: var(--muted);
+          font-size: 9.5px;
+          font-weight: 500;
         }
 
         .profile-actions-list {
           display: flex;
           flex-direction: column;
-          gap: 2px;
+          gap: 3px;
         }
 
         .profile-menu-item {
           display: flex;
           align-items: center;
-          gap: 9px;
+          gap: 10px;
           width: 100%;
-          padding: 8px 10px;
-          border-radius: 10px;
-          border: none;
-          background: transparent;
-          color: var(--ink);
-          font-size: 11px;
-          font-weight: 500;
+          padding: 8px 12px;
+          box-sizing: border-box;
           cursor: pointer;
-          transition: background 0.15s ease;
+          font-size: 11.5px;
+          font-weight: 500;
           text-align: left;
+          border-radius: 10px;
+          color: var(--ink);
+          border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
+          border-top-color: color-mix(in srgb, #fff 15%, transparent);
+          background: color-mix(in srgb, var(--surface-solid) 15%, transparent);
+          backdrop-filter: blur(10px) saturate(120%);
+          -webkit-backdrop-filter: blur(10px) saturate(120%);
+          box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent);
+          transition: background 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .menu-icon-layer {
+          opacity: 0.75;
+          transition: opacity 0.25s ease;
         }
 
         .profile-menu-item:hover {
-          background: var(--brand-soft);
+          background: color-mix(in srgb, var(--primary) 18%, transparent);
+          border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+          border-top-color: color-mix(in srgb, #fff 30%, transparent);
+          transform: translateY(-0.5px);
+          box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent), 0 6px 16px -4px color-mix(in srgb, var(--primary) 20%, transparent);
+        }
+
+        .profile-menu-item:hover .menu-icon-layer {
+          opacity: 1;
         }
 
         .profile-divider {
           height: 1px;
-          background: var(--line);
-          margin: 4px 0;
+          margin: 4px 6px;
+          background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+          box-shadow: 0 0.5px 0 color-mix(in srgb, #fff 10%, transparent);
         }
 
         .profile-menu-item.danger-item {
           color: var(--danger);
+          border-color: color-mix(in srgb, var(--danger) 10%, transparent);
         }
 
         .profile-menu-item.danger-item:hover {
-          background: color-mix(in srgb, var(--danger) 12%, transparent);
+          background: color-mix(in srgb, var(--danger) 15%, transparent);
+          border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+          border-top-color: color-mix(in srgb, #fff 25%, transparent);
+          box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 15%, transparent), 0 6px 16px -4px color-mix(in srgb, var(--danger) 20%, transparent);
         }
 
         /* Animations */
@@ -1349,14 +1342,15 @@ export function OsHeader({
             align-items: center;
             justify-content: center;
             width: 118px !important;
-            height: 38px !important;
+            min-height: 32px;
+            height: 32px !important;
             gap: 2px;
             flex-direction: row;
-            padding: 3px;
-            border: 1px solid var(--line);
+            padding: 2px;
+            border: 0;
             border-radius: 12px;
-            background: var(--brand-soft);
-            color: var(--ink);
+            background: var(--surface-soft);
+            color: var(--text);
           }
           .header-actions .theme-switch .theme-option {
             display: flex;
@@ -1364,18 +1358,23 @@ export function OsHeader({
             justify-content: center;
             gap: 5px;
             width: 50%;
-            height: 30px;
+            height: 28px;
             min-width: 0;
             white-space: nowrap;
             border-radius: 9px;
-            opacity: .62;
-            font-size: 10px;
+            border: 0;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            opacity: 1;
+            font-size: 9px;
+            font-weight: 700;
+            transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
           }
           .header-actions .theme-switch .theme-option.is-active {
-            opacity: 1;
-            color: var(--ink);
-            background: var(--paper);
-            box-shadow: 0 1px 3px var(--card-shadow);
+            color: var(--primary);
+            background: var(--surface-solid);
+            box-shadow: var(--shadow-tiny);
           }
         }
       `}</style>
