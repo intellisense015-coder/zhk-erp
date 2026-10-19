@@ -279,12 +279,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 }
 
 @keyframes splash-fade { from { opacity: 1; } to { opacity: 0; pointer-events: none; } }
-.splash-screen { isolation: isolate; background: var(--bg-primary); }
-.splash-screen__background { position: absolute; inset: 0; z-index: -3; background: linear-gradient(90deg, var(--bg-primary) 0%, color-mix(in srgb, var(--bg-primary) 86%, transparent) 43%, transparent 100%), url("/splash-back-dark.jpeg") center / cover no-repeat; animation: splash-background-in 2.4s cubic-bezier(.16, 1, .3, 1) both; }
-html[data-theme="dark"] .splash-screen__background { background: url("/splash-back-dark.jpeg") center / cover no-repeat; }
-.splash-screen__glow { position: absolute; z-index: -2; top: 50%; right: 8%; width: min(52vw, 48rem); aspect-ratio: 1; transform: translateY(-50%); border-radius: 9999px; background: radial-gradient(circle, var(--primary-glow), transparent 67%); filter: blur(20px); pointer-events: none; }
-.splash-screen__brand { position: absolute; top: 50%; left: clamp(2rem, 7vw, 7rem); width: min(37vw, 31rem); transform: translateY(-50%); color: #151515; text-align: left; }
-html[data-theme="dark"] .splash-screen__brand { color: #fff; }
+.splash-screen { isolation: isolate; background: #171717; color: #fff; }
+.splash-screen__background { position: absolute; inset: 0; z-index: -3; background: url("/splash-back-dark.jpeg") center / cover no-repeat; animation: splash-background-in 2.4s cubic-bezier(.16, 1, .3, 1) both; }
+.splash-screen__glow { position: absolute; z-index: -2; top: 50%; right: 8%; width: min(52vw, 48rem); aspect-ratio: 1; transform: translateY(-50%); border-radius: 9999px; background: radial-gradient(circle, rgba(139, 124, 255, .32), transparent 67%); filter: blur(20px); pointer-events: none; }
+.splash-screen__brand { position: absolute; top: 50%; left: clamp(2rem, 7vw, 7rem); width: min(37vw, 31rem); transform: translateY(-50%); color: #fff; text-align: left; }
 .splash-screen__brand h1 { margin: 0; font-size: clamp(3.5rem, 7vw, 7.5rem); font-weight: 800; letter-spacing: -.075em; line-height: .92; }
 .splash-screen__brand p { margin: 1rem 0 0; font-size: clamp(.85rem, 1.2vw, 1.15rem); font-weight: 500; letter-spacing: .03em; opacity: .8; }
 .splash-screen__progress { width: min(10rem, 60%); height: 2px; margin-top: 2.75rem; overflow: hidden; border-radius: 9999px; background: color-mix(in srgb, currentColor 18%, transparent); }
