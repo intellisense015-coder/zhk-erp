@@ -12,7 +12,7 @@ import { useErpStore } from "../../../lib/erp-store";
 type ReportRow = { id: string; product: string; customerName: string; unitsSold: number; unitMargin: number; totalSoldCost: number };
 
 export default function ReportsPage() {
-  const { products, transactions } = useErpStore();
+  const { products, transactions, expenses } = useErpStore();
   const monthOptions = getMonthOptions(transactions);
   const [month, setMonth] = useState("all");
   const [draftMonth, setDraftMonth] = useState("all");
@@ -24,8 +24,9 @@ export default function ReportsPage() {
   const sales = useMemo(() => periodTransactions.filter((transaction) => transaction.type === "sale"), [periodTransactions]);
   const totalSale = sales.reduce((sum, transaction) => sum + transaction.amount, 0);
   const profit = sales.reduce((sum, transaction) => sum + (transaction.profit ?? 0), 0);
+  const totalExpenses = expenses.filter((expense) => month === "all" || expense.month === month).reduce((sum, expense) => sum + expense.amount, 0);
+  const netProfit = profit - totalExpenses;
   const totalSoldCost = sales.reduce((sum, transaction) => sum + getTransactionItems(transaction).reduce((lineSum, item) => lineSum + item.quantity * item.unitCost, 0), 0);
-  const profitMargin = totalSale ? (profit / totalSale) * 100 : 0;
 
   const reportRows = useMemo<ReportRow[]>(() => {
     const rowMap = new Map<string, ReportRow>();
@@ -51,11 +52,12 @@ export default function ReportsPage() {
       <Button variant="secondary" className="font-sans text-sm font-medium text-[var(--text)] min-h-10 px-4 rounded-[15px] gap-2" onClick={() => { setDraftMonth(month); setFilterOpen(true); }}><Filter size={14} />Filters</Button>
     </div>
 
-    <div className="kpi-grid inventory-kpis inventory-kpis-four mb-[18px]">
-      <KpiCard label="Profit margin" value={`${profitMargin.toFixed(1)}%`} note="Gross margin on sales" icon={<Percent size={16} />} />
-      <KpiCard label="Profit" value={formatCurrency(profit)} note="Net profit from sales" icon={<TrendingUp size={16} />} tone="success" />
+    <div className="kpi-grid inventory-kpis reports-kpis mb-[18px]">
+      <KpiCard label="Gross profit" value={formatCurrency(profit)} note="Sales less product costs" icon={<TrendingUp size={16} />} tone="success" />
+      <KpiCard label="Net profit" value={formatCurrency(netProfit)} note="Sales profit less expenses" icon={<TrendingUp size={16} />} tone={netProfit >= 0 ? "success" : "error"} />
+      <KpiCard label="Profit margin" value={`${totalSale ? ((netProfit / totalSale) * 100).toFixed(1) : "0.0"}%`} note="Net margin after expenses" icon={<Percent size={16} />} />
       <KpiCard label="Total sold cost" value={formatCurrency(totalSoldCost)} note="Cost of products sold" icon={<CircleDollarSign size={16} />} tone="error" />
-      <KpiCard label="Total sale" value={formatCurrency(totalSale)} note="Recorded customer sales" icon={<ReceiptText size={16} />} />
+      <KpiCard label="Expenses" value={formatCurrency(totalExpenses)} note="Recorded business costs" icon={<ReceiptText size={16} />} tone="error" />
     </div>
 
     <div className="solexa-filter-chips">

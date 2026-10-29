@@ -33,6 +33,8 @@ export const purchaseSchema = z.object({
   quantity: positiveNumber,
   unitCost: positiveNumber,
   paidAmount: nonNegativeNumber,
+  capitalId: z.string().optional(),
+  fundingSource: z.enum(["capital", "supplier-credit", "other"]).optional(),
 });
 
 export const saleLineItemSchema = z.object({

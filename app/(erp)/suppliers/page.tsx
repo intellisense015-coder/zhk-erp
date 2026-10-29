@@ -6,7 +6,7 @@ import { KpiCard } from "../../../components/erp/kpi-card";
 import { Button } from "../../../components/primitives/button";
 import { ConfirmDialog, Field, Modal, SelectField } from "../../../components/primitives/primitives";
 import { DataTable } from "../../../components/primitives/table";
-import { formatCurrency, formatTransactionTime, type Supplier, type SupplierPayment, type Transaction } from "../../../lib/erp-data";
+import { formatCurrency, formatTransactionTime, getCapitalSummary, type Supplier, type SupplierPayment, type Transaction } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
 
 type SupplierRow = Supplier & { purchaseCount: number; totalPurchased: number; totalPaid: number; outstanding: number };
@@ -17,7 +17,7 @@ const activityOptions = ["All suppliers", "Active suppliers", "No purchases yet"
 const balanceOptions = ["All balances", "Outstanding balances", "Paid in full"];
 
 export default function SuppliersPage() {
-  const { suppliers, transactions, supplierPayments, addSupplier, updateSupplier, deleteSupplier, addSupplierPayment } = useErpStore();
+  const { suppliers, transactions, supplierPayments, capitalAccounts, capitalEntries, expenses, addSupplier, updateSupplier, deleteSupplier, addSupplierPayment } = useErpStore();
   const [selected, setSelected] = useState<SupplierRow | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Supplier | null>(null);
@@ -27,6 +27,7 @@ export default function SuppliersPage() {
   const [paymentTarget, setPaymentTarget] = useState<SupplierRow | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
+  const [paymentCapitalId, setPaymentCapitalId] = useState("");
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [activity, setActivity] = useState(activityOptions[0]);
@@ -95,6 +96,7 @@ export default function SuppliersPage() {
     setPaymentTarget(supplier);
     setPaymentAmount(supplier.outstanding > 0 ? String(supplier.outstanding) : "");
     setPaymentNote("");
+    setPaymentCapitalId("");
     setPaymentError(null);
   };
 
@@ -102,6 +104,7 @@ export default function SuppliersPage() {
     setPaymentTarget(null);
     setPaymentAmount("");
     setPaymentNote("");
+    setPaymentCapitalId("");
     setPaymentError(null);
   };
 
@@ -117,7 +120,7 @@ export default function SuppliersPage() {
       setPaymentError("Payment cannot exceed the supplier's outstanding balance.");
       return;
     }
-    const result = addSupplierPayment({ supplierId: paymentTarget.id, amount, note: paymentNote });
+    const result = addSupplierPayment({ supplierId: paymentTarget.id, amount, note: paymentNote, capitalId: paymentCapitalId || undefined });
     if (!result.ok) {
       setPaymentError(result.message);
       return;
@@ -215,6 +218,10 @@ export default function SuppliersPage() {
           {paymentTarget && <div className="supplier-payment-summary"><div className="supplier-payment-summary-card"><span className="supplier-payment-summary-label">Supplier</span><strong className="supplier-payment-summary-value">{paymentTarget.name}</strong><span className="supplier-payment-summary-detail">{paymentTarget.company || "No company"}</span></div><div className="supplier-payment-summary-card"><span className="supplier-payment-summary-label">Outstanding balance</span><strong className="supplier-payment-summary-value value-negative">{formatCurrency(paymentTarget.outstanding)}</strong></div></div>}
           <Field label="Payment amount" type="text" inputMode="decimal" value={formatAmountInput(paymentAmount)} hint={paymentError ?? undefined} onChange={(event) => { const raw = event.target.value.replace(/[^\d.]/g, ""); const [whole, fraction] = raw.split("."); setPaymentAmount(fraction === undefined ? whole : `${whole}.${fraction.slice(0, 2)}`); setPaymentError(null); }} placeholder="e.g. 25,000" />
           <Field label="Payment note (optional)" value={paymentNote} onChange={(event) => setPaymentNote(event.target.value)} placeholder="e.g. Paid by bank transfer" />
+          <SelectField label="Funding source" value={paymentCapitalId ? `capital:${paymentCapitalId}` : "other"} onChange={(event) => setPaymentCapitalId(event.target.value.startsWith("capital:") ? event.target.value.slice(8) : "")}>
+            <option value="other">Other funds</option>
+            {capitalAccounts.map((account) => { const available = getCapitalSummary(account.id, capitalEntries, transactions, supplierPayments, expenses).available; return <option key={account.id} value={`capital:${account.id}`}>{account.name} · {formatCurrency(available)} available</option>; })}
+          </SelectField>
           <div className="primitive-dialog-actions px-0 pb-0"><Button type="button" variant="secondary" className="cancel-button !bg-[var(--error)] !text-white" onClick={closePayment}>Cancel</Button><Button type="submit" variant="brand" className="inventory-add-product-button !text-white">Record payment</Button></div>
         </form>
       </Modal>

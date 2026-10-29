@@ -296,6 +296,40 @@ export type SupplierPayment = {
   date: string;
   time: string;
   createdAt?: string;
+  capitalId?: string;
+};
+
+export type Expense = {
+  id: string;
+  category: string;
+  description: string;
+  amount: number;
+  date: string;
+  month: string;
+  paymentMethod?: string;
+  note?: string;
+  capitalId?: string;
+  createdAt?: string;
+};
+
+export const defaultExpenseCategories = ["Rent", "Utilities", "Salaries", "Transport", "Marketing", "Repairs", "Office supplies", "Other"];
+
+export type CapitalAccount = {
+  id: string;
+  name: string;
+  ownerName?: string;
+  createdAt: string;
+};
+
+export type CapitalEntry = {
+  id: string;
+  capitalId: string;
+  type: "contribution" | "withdrawal";
+  amount: number;
+  date: string;
+  month: string;
+  note?: string;
+  createdAt: string;
 };
 
 export type Transaction = {
@@ -329,6 +363,9 @@ export type Transaction = {
   exchangeId?: string;
   tradeInCredit?: number;
   amountDue?: number;
+  invoiceNumber?: string;
+  capitalId?: string;
+  fundingSource?: "capital" | "supplier-credit" | "other";
 };
 
 export const categories = ["All categories", "Mobiles", "Smartwatches", "Audio", "Chargers", "Cables", "Tablets", "Accessories"];
@@ -336,8 +373,8 @@ export const formatCurrency = (value: number) => `Rs ${new Intl.NumberFormat("en
 export const formatCompactCurrency = (value: number) => {
   const absolute = Math.abs(value);
   const sign = value < 0 ? "-" : "";
-  if (absolute >= 1_000_000) return `Rs ${sign}${(absolute / 1_000_000).toFixed(absolute >= 10_000_000 ? 0 : 1)}M`;
-  if (absolute >= 1_000) return `Rs ${sign}${(absolute / 1_000).toFixed(absolute >= 100_000 ? 0 : 1)}K`;
+  if (absolute >= 1_000_000) return `Rs ${sign}${Math.round(absolute / 1_000_000)}M`;
+  if (absolute >= 1_000) return `Rs ${sign}${Math.round(absolute / 1_000)}K`;
   return formatCurrency(value);
 };
 
@@ -368,4 +405,21 @@ export function formatTransactionTime(transaction: Transaction) {
   if (sameDay) return clock;
   const date = new Intl.DateTimeFormat("en-PK", { day: "numeric", month: "short", year: "numeric" }).format(createdAt);
   return `${date}, ${clock}`;
+}
+
+export function formatLongDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" }).format(date);
+}
+
+export function getCapitalSummary(capitalId: string, entries: CapitalEntry[], transactions: Transaction[], supplierPayments: SupplierPayment[], expenses: Expense[]) {
+  const contributed = entries.filter((entry) => entry.capitalId === capitalId && entry.type === "contribution").reduce((sum, entry) => sum + entry.amount, 0);
+  const withdrawn = entries.filter((entry) => entry.capitalId === capitalId && entry.type === "withdrawal").reduce((sum, entry) => sum + entry.amount, 0);
+  const purchases = transactions.filter((transaction) => transaction.type === "purchase" && transaction.capitalId === capitalId).reduce((sum, transaction) => sum + (transaction.paidAmount ?? 0), 0);
+  // The initial payment recorded with a purchase is represented both on the
+  // purchase and in the supplier-payment ledger. Count it once here.
+  const payments = supplierPayments.filter((payment) => payment.capitalId === capitalId && payment.note !== "Paid with purchase").reduce((sum, payment) => sum + payment.amount, 0);
+  const expenseTotal = expenses.filter((expense) => expense.capitalId === capitalId).reduce((sum, expense) => sum + expense.amount, 0);
+  const used = purchases + payments + expenseTotal;
+  return { contributed, withdrawn, used, available: contributed - withdrawn - used };
 }

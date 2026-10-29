@@ -1,7 +1,8 @@
 "use client";
 
-import { Check, CircleDollarSign, Filter, Pencil, Search, ShoppingCart, TrendingUp, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Check, CircleDollarSign, FileText, Filter, Pencil, Search, ShoppingCart, TrendingUp, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/primitives/button";
 import { Modal, SelectField } from "../../../components/primitives/primitives";
 import { DataTable } from "../../../components/primitives/table";
@@ -9,10 +10,9 @@ import { KpiCard } from "../../../components/erp/kpi-card";
 import { formatCurrency, formatTransactionTime, getMonthOptions, getTransactionItems, type SaleLineItem, type Transaction } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
-
 export default function SalesPage() {
   const { transactions, updateSale } = useErpStore();
+  const router = useRouter();
   const monthOptions = getMonthOptions(transactions);
   const [filterOpen, setFilterOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -21,6 +21,8 @@ export default function SalesPage() {
   const [editDraft, setEditDraft] = useState<{ customerName: string; items: SaleLineItem[] } | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [editSaved, setEditSaved] = useState(false);
+  const [today, setToday] = useState<string | null>(null);
+  useEffect(() => { const timer = window.setTimeout(() => setToday(new Date().toISOString().slice(0, 10)), 0); return () => window.clearTimeout(timer); }, []);
   const sales = transactions.filter((transaction) => transaction.type === "sale").map((transaction) => ({ ...transaction, time: formatTransactionTime(transaction) }));
   const [customer, setCustomer] = useState("All customers");
   const [productName, setProductName] = useState("All products");
@@ -36,7 +38,7 @@ export default function SalesPage() {
   const revenue = monthSales.reduce((sum, sale) => sum + sale.amount, 0);
   const profit = monthSales.reduce((sum, sale) => sum + (sale.profit ?? 0), 0);
   const units = monthSales.reduce((sum, sale) => sum + sale.quantity, 0);
-  const todaySales = sales.filter((sale) => sale.date === todayIso()).reduce((sum, sale) => sum + sale.amount, 0);
+  const todaySales = today ? sales.filter((sale) => sale.date === today).reduce((sum, sale) => sum + sale.amount, 0) : 0;
   const startEditing = (sale: Transaction) => { if (!sale.items?.length) { setEditError("This legacy sale has no editable line-item details."); setEditSaved(false); return; } setEditingSaleId(sale.id); setEditDraft({ customerName: sale.party, items: sale.items.map((item) => ({ ...item, discount: item.discount ?? 0 })) }); setEditError(null); setEditSaved(false); };
   const cancelEditing = () => { setEditingSaleId(null); setEditDraft(null); setEditError(null); };
   const updateDraftItem = (productId: string, field: "quantity" | "unitSellingPrice" | "discount", value: number) => setEditDraft((current) => current ? { ...current, items: current.items.map((item) => { if (item.productId !== productId) return item; const nextValue = Number.isFinite(value) ? Math.max(0, value) : 0; const next = { ...item, [field]: nextValue }; const subtotal = next.quantity * next.unitSellingPrice; return { ...next, amount: Math.max(0, subtotal - next.discount), profit: Math.max(0, subtotal - next.discount) - next.quantity * next.unitCost }; }) } : current);
@@ -51,7 +53,7 @@ export default function SalesPage() {
     { key: "amount", header: "Sale total", sortable: true, align: "right" as const, accessor: (sale: Transaction) => <span className="font-semibold value-positive">+{formatCurrency(editingSaleId === sale.id && editDraft ? editDraft.items.reduce((sum, item) => sum + item.amount, 0) : sale.amount)}</span> },
     { key: "profit", header: "Gross profit", sortable: true, align: "right" as const, accessor: (sale: Transaction) => <span className="font-semibold value-positive">+{formatCurrency(editingSaleId === sale.id && editDraft ? editDraft.items.reduce((sum, item) => sum + item.profit, 0) : sale.profit ?? 0)}</span> },
     { key: "time", header: "Recorded", sortable: true, accessor: (sale: Transaction) => sale.time },
-    { key: "actions", header: "Actions", align: "right" as const, accessor: (sale: Transaction) => editingSaleId === sale.id ? <div className="sales-inline-actions" onClick={(event) => event.stopPropagation()}><button type="button" className="sales-inline-save" onClick={() => saveEditing(sale)}><Check size={13} />Save</button><button type="button" className="sales-inline-cancel cancel-button" onClick={cancelEditing}>Cancel</button></div> : <div className="table-row-actions"><button type="button" className="table-icon-button" aria-label={`Edit ${sale.party}'s sale`} title="Edit sale" onClick={(event) => { event.stopPropagation(); startEditing(sale); }} disabled={!sale.items?.length}><Pencil size={14} /></button></div> },
+    { key: "actions", header: "Actions", align: "right" as const, accessor: (sale: Transaction) => editingSaleId === sale.id ? <div className="sales-inline-actions" onClick={(event) => event.stopPropagation()}><button type="button" className="sales-inline-save" onClick={() => saveEditing(sale)}><Check size={13} />Save</button><button type="button" className="sales-inline-cancel cancel-button" onClick={cancelEditing}>Cancel</button></div> : <div className="table-row-actions"><button type="button" className="table-icon-button" aria-label={`Open invoice for ${sale.party}`} title="Open invoice" onClick={(event) => { event.stopPropagation(); router.push(`/invoices?id=${sale.id}`); }}><FileText size={14} /></button><button type="button" className="table-icon-button" aria-label={`Edit ${sale.party}'s sale`} title="Edit sale" onClick={(event) => { event.stopPropagation(); startEditing(sale); }} disabled={!sale.items?.length}><Pencil size={14} /></button></div> },
   ];
 
   return <div className="erp-content inventory-page-enter">

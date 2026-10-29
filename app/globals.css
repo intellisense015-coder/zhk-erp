@@ -629,6 +629,22 @@ input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
   .product-status-preview small { width: 100%; margin-left: 0; }
 }
 
+@media print {
+  body * { visibility: hidden !important; }
+  .invoice-print-root, .invoice-print-root * { visibility: visible !important; }
+  .invoice-print-root { position: absolute; left: 0; top: 0; width: 100%; }
+  .invoice-toolbar { display: none !important; }
+}
+
+.expenses-page .kpi-card-value {
+  font-size: 18px !important;
+  letter-spacing: -.02em;
+}
+
+.capital-page > .erp-card {
+  margin-top: 24px;
+}
+
 /* Shared workflow refinements. */
 .modal-card, .primitive-dialog, .custom-select-menu,
 .solexa-table-root, .solexa-table-frame { box-shadow: none !important; }
@@ -1456,6 +1472,10 @@ html[data-theme="dark"] .brand-button, .dark .brand-button { background: var(--b
 .inventory-kpis-four { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
 @media (max-width: 1023px) { .inventory-kpis-four { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 @media (max-width: 620px) { .inventory-kpis-four { grid-template-columns: 1fr !important; } }
+.reports-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+@media (max-width: 1200px) { .reports-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; } }
+@media (max-width: 1023px) { .reports-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+@media (max-width: 620px) { .reports-kpis { grid-template-columns: 1fr !important; } }
 
 .inventory-table .table-row-actions { justify-content: flex-start; }
 .theme-switch { border: 0 !important; background: var(--surface-soft) !important; box-shadow: none !important; }
@@ -2311,6 +2331,27 @@ html[data-theme="dark"] .pos-page .pos-complete-button svg,
 .pos-page .pos-cart-item-total {
   min-width: 0;
   text-align: center;
+}
+
+.pos-page .pos-cart-price-input {
+  width: 100%;
+  height: 30px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 0 8px;
+  color: var(--text-primary);
+  -webkit-text-fill-color: var(--text-primary);
+  font: inherit;
+  font-size: 10px;
+  text-align: right;
+  outline: 0;
+}
+
+.pos-page .pos-cart-price-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-glow);
 }
 
 .pos-page .pos-cart-item > button {

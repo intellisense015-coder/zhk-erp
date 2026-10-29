@@ -105,8 +105,9 @@ export default function PurchasesPage() {
             { key: "quantity", header: "Qty", width: "14.2857%", sortable: true, align: "right", accessor: (purchase) => `${purchase.quantity} units` },
             { key: "unitCost", header: "Unit cost", width: "14.2857%", sortable: true, align: "right", accessor: (purchase) => formatCurrency(purchase.unitCost ?? (purchase.quantity ? purchase.amount / purchase.quantity : 0)) },
             { key: "amount", header: "Purchased", width: "14.2857%", sortable: true, align: "right", accessor: (purchase) => <span className="font-bold text-[var(--text-primary)]">{formatCurrency(purchase.amount)}</span> },
-            { key: "outstandingAmount", header: "Outstanding", width: "14.2857%", sortable: true, align: "right", accessor: (purchase) => <TableBadge tone={(purchase.outstandingAmount ?? purchase.amount) > 0 ? "danger" : "success"}>{formatCurrency(purchase.outstandingAmount ?? Math.max(0, purchase.amount - (purchase.paidAmount ?? 0)))}</TableBadge> },
-            { key: "date", header: "Recorded", width: "14.2857%", sortable: true, accessor: (purchase) => <span className="text-[var(--text-muted)]">{formatTransactionTime(purchase)}</span> },
+            { key: "outstandingAmount", header: "Outstanding", width: "12%", sortable: true, align: "right", accessor: (purchase) => <TableBadge tone={(purchase.outstandingAmount ?? purchase.amount) > 0 ? "danger" : "success"}>{formatCurrency(purchase.outstandingAmount ?? Math.max(0, purchase.amount - (purchase.paidAmount ?? 0)))}</TableBadge> },
+            { key: "funding", header: "Funding", width: "12%", sortable: true, accessor: (purchase) => purchase.fundingSource === "capital" ? <TableBadge tone="success">Capital</TableBadge> : purchase.fundingSource === "supplier-credit" ? <TableBadge tone="warning">Credit</TableBadge> : <span className="text-[var(--text-muted)]">Other</span> },
+            { key: "date", header: "Recorded", width: "12%", sortable: true, accessor: (purchase) => <span className="text-[var(--text-muted)]">{formatTransactionTime(purchase)}</span> },
           ]}
         />
       </section>

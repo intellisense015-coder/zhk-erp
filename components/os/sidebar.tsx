@@ -11,16 +11,20 @@ import {
   Building2,
   ChevronDown,
   ClipboardList,
+  CircleDollarSign,
+  FileText,
   LayoutDashboard,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   PackagePlus,
   Receipt,
+  ReceiptText,
   Settings2,
   ShoppingCart,
   Users,
   X,
+  WalletCards,
   type LucideIcon,
 } from "lucide-react";
 
@@ -70,6 +74,15 @@ const DEFAULT_NAV_GROUPS: NavGroupItem[] = [
       { label: "Purchases", href: "/purchases", icon: Receipt },
       { label: "Low stock", href: "/low-stock", icon: Bell },
       { label: "Settings", href: "/settings", icon: Settings2 },
+    ],
+  },
+  {
+    label: "Finance",
+    icon: CircleDollarSign,
+    items: [
+      { label: "Expenses", href: "/expenses", icon: ReceiptText },
+      { label: "Invoices", href: "/invoices", icon: FileText },
+      { label: "Capital", href: "/capital", icon: WalletCards },
     ],
   },
   {
