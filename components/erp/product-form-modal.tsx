@@ -89,7 +89,8 @@ export function ProductFormModal({ open, product, onClose, onSubmit, serverError
   ]).values());
   const colorOptions = Array.from(new Set([...(catalogModel?.colors ?? []), ...getProductColorOptions(brandValue, modelValue, categoryValue, colorValue)]));
   const vendorNames = Array.from(new Set([...suppliers.map((supplier) => supplier.name), ...(product?.vendorName ? [product.vendorName] : [])]));
-  const selectedVendor = suppliers.some((supplier) => supplier.name.trim().toLowerCase() === currentVendor.trim().toLowerCase()) ? currentVendor : "__new_vendor__";
+  const selectedSupplier = suppliers.find((supplier) => supplier.name.trim().toLowerCase() === currentVendor.trim().toLowerCase());
+  const selectedVendor = selectedSupplier?.contactNumber?.trim() ? currentVendor : "__new_vendor__";
   const showNewVendor = selectedVendor === "__new_vendor__";
   const totalCost = costPrice * quantity;
   const perPieceProfit = sellingPrice - costPrice;
@@ -227,6 +228,13 @@ export function ProductFormModal({ open, product, onClose, onSubmit, serverError
               <option value="__new_vendor__">+ New Supplier</option>
               {vendorNames.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}
           </SelectField>
+
+          {!showNewVendor && <button type="button" className="mt-1 h-10 self-end rounded-[12px] border border-[var(--border)] px-3 text-[10px] font-bold text-[var(--primary)] transition hover:border-[var(--primary)]" onClick={() => {
+            setValue("vendorName", "", { shouldDirty: true, shouldValidate: true });
+            setValue("vendorContactNumber", "", { shouldDirty: true, shouldValidate: true });
+            setValue("vendorCompany", "", { shouldDirty: true });
+            setVendorError(null);
+          }}>+ Add new supplier</button>}
 
           {showNewVendor ? <>
             <Field className="product-modal-compact-label" label="Full name" textOnly placeholder="e.g. Ahmed Khan" {...register("vendorName")} hint={errors.vendorName?.message === "Supplier is required" ? undefined : errors.vendorName?.message} />

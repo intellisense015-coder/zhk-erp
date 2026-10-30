@@ -186,7 +186,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     const supabase = createSupabaseBrowserClient();
     if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
     const remote = await loadSupabaseStoreData(supabase, workspaceId);
-    if (!remote.data) return { ok: false, message: "The workspace was saved, but inventory could not be refreshed." };
+    if (!remote.data) return { ok: false, message: readableRpcError(remote.error ?? "", "The workspace was saved, but inventory could not be refreshed.") };
     setData(remote.data);
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remote.data));
     return { ok: true };
