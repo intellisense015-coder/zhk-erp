@@ -8,6 +8,12 @@ const nextConfig: NextConfig = {
   experimental: {
     agentFeedback: true,
     agentUpgrade: "security",
+    // ERP routes hydrate auth, workspace access, and data in the browser.
+    // Keep Next's instant-navigation validator opt-in until those routes
+    // provide a real static shell/Suspense boundary for the async work.
+    instantInsights: {
+      validationLevel: "manual-warning",
+    },
   },
   cacheComponents: true,
   partialPrefetching: true,
