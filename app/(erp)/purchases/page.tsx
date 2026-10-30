@@ -7,6 +7,7 @@ import { KpiCard } from "../../../components/erp/kpi-card";
 import { Button } from "../../../components/primitives/button";
 import { Modal, SelectField } from "../../../components/primitives/primitives";
 import { PurchaseFormModal } from "../../../components/erp/purchase-form-modal";
+import { Notification, type NotificationVariant } from "../../../components/primitives/notification";
 import { DataTable, TableBadge } from "../../../components/primitives/table";
 import { formatCompactCurrency, formatCurrency, formatTransactionTime, getMonthOptions } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
@@ -28,6 +29,7 @@ export default function PurchasesPage() {
   const [search, setSearch] = useState("");
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ message: string; variant: NotificationVariant } | null>(null);
 
   const visible = useMemo(() => purchases.filter((purchase) => {
     const matchesMonth = month === "all" || purchase.month === month;
@@ -55,11 +57,11 @@ export default function PurchasesPage() {
     setDraftMonth("all");
     setDraftSupplier("all");
   };
-  const openPurchase = () => { setPurchaseError(null); setPurchaseOpen(true); };
+  const openPurchase = () => { setPurchaseError(null); setNotification(null); setPurchaseOpen(true); };
   const closePurchase = () => { setPurchaseOpen(false); setPurchaseError(null); };
   const savePurchase = async (values: Parameters<typeof addPurchase>[0]) => {
     const result = await addPurchase(values);
-    if (result.ok) closePurchase();
+    if (result.ok) { closePurchase(); setNotification({ variant: "success", message: "Stock added and purchase recorded successfully." }); }
     else setPurchaseError(result.message);
   };
 
@@ -143,7 +145,8 @@ export default function PurchasesPage() {
         </div>
       </Modal>
 
-      <PurchaseFormModal open={purchaseOpen} onClose={closePurchase} onSubmit={savePurchase} serverError={purchaseError} />
+      <PurchaseFormModal open={purchaseOpen} onClose={closePurchase} onSubmit={savePurchase} serverError={purchaseError} onDismissServerError={() => setPurchaseError(null)} />
+      <Notification message={notification?.message} variant={notification?.variant ?? "success"} onDismiss={() => setNotification(null)} />
 
     </div>
   );

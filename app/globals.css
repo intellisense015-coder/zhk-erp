@@ -452,6 +452,12 @@ body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSyst
 .settings-profile-row p { margin: 0 0 5px; color: var(--text-muted); font-size: 10px; }
 .settings-profile-row strong { display: block; color: var(--text-primary); font-size: 12px; line-height: 1.35; word-break: break-word; }
 .settings-success { display: flex; align-items: center; gap: 7px; margin: 18px 0 0; border-radius: 12px; background: var(--success-glow); padding: 12px 14px; color: var(--success); font-size: 11px; font-weight: 700; }
+.solexa-notification { position: fixed; top: 86px; right: 24px; z-index: 120; display: flex; align-items: flex-start; gap: 10px; width: min(420px, calc(100vw - 32px)); border: 1px solid transparent; border-radius: 16px; box-shadow: var(--shadow-md); padding: 14px 15px; font-size: 12px; font-weight: 800; line-height: 1.4; }
+.solexa-notification-success { border-color: color-mix(in srgb, var(--success) 24%, transparent); background: var(--success-glow); color: var(--success); }
+.solexa-notification-error { border-color: color-mix(in srgb, var(--error) 24%, transparent); background: var(--error-glow); color: var(--error); }
+.solexa-notification > span { flex: 1; }
+.solexa-notification-dismiss { display: grid; place-items: center; flex: 0 0 auto; border: 0; border-radius: 8px; background: transparent; color: currentColor; cursor: pointer; padding: 2px; }
+.solexa-notification-dismiss:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
 .settings-side-stack { display: grid; gap: 18px; }
 .settings-info-card { position: relative; min-height: 164px; padding: 22px; }
 .settings-info-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--primary-soft); color: var(--primary); }
