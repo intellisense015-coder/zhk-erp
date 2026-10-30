@@ -5,6 +5,7 @@ import { Controller, useForm, useWatch, type FieldErrors } from "react-hook-form
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "../primitives/button";
 import { Field, Modal, SelectField } from "../primitives/primitives";
+import { Notification } from "../primitives/notification";
 import { brandLogoDomains, categories, formatCurrency, getProductColorOptions, productBrands, type Product } from "../../lib/erp-data";
 import { productSchema, type ProductFormValues } from "../../lib/validations";
 import { useErpStore } from "../../lib/erp-store";
@@ -65,9 +66,9 @@ function BrandOption({ brand }: { brand: (typeof productBrands)[number] }) {
   return <span className="product-brand-option"><span className={`product-brand-logo ${hasLogo ? "" : "product-brand-fallback"}`}>{hasLogo ? <img src={logoUrl} alt={`${brand.label} logo`} aria-hidden="true" onError={() => setLogoIndex((current) => current + 1)} /> : brand.mark}</span><span>{brand.label}</span></span>;
 }
 
-type ProductFormModalProps = { open: boolean; product?: Product | null; onClose: () => void; onSubmit: (values: ProductFormValues) => { ok: true } | { ok: false; message: string } | void | Promise<{ ok: true } | { ok: false; message: string } | void>; serverError?: string | null };
+type ProductFormModalProps = { open: boolean; product?: Product | null; onClose: () => void; onSubmit: (values: ProductFormValues) => { ok: true } | { ok: false; message: string } | void | Promise<{ ok: true } | { ok: false; message: string } | void>; serverError?: string | null; onDismissServerError?: () => void };
 
-export function ProductFormModal({ open, product, onClose, onSubmit, serverError }: ProductFormModalProps) {
+export function ProductFormModal({ open, product, onClose, onSubmit, serverError, onDismissServerError }: ProductFormModalProps) {
   const { suppliers, hydrated } = useErpStore();
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset, setValue, control } = useForm<ProductFormValues>({ resolver: zodResolver(productSchema), defaultValues: product ? { ...product, brand: product.brand ?? "other", model: product.model ?? product.name, vendorName: product.vendorName ?? "", vendorContactNumber: product.vendorContactNumber ?? "", vendorCompany: product.vendorCompany ?? "", imageUrl: product.imageUrl ?? "", imageSource: product.imageSource } : emptyProduct });
   const brandValue = useWatch({ control, name: "brand" }) || emptyProduct.brand;
@@ -167,7 +168,7 @@ export function ProductFormModal({ open, product, onClose, onSubmit, serverError
   return <Modal open={open} loading={!hydrated} title={editing ? "Edit product" : "Add product"} description={editing ? "Update this product without leaving inventory." : "Register a product with pricing, stock, and reorder rules."} onClose={onClose} className="product-form-modal">
     <form onSubmit={handleSubmit(submit, handleInvalid)} className="grid gap-x-5 gap-y-1 p-5 sm:grid-cols-2">
       {formError && <p role="alert" className="rounded-xl bg-[var(--error-glow)] px-4 py-3 text-xs font-bold text-[var(--error)] sm:col-span-2">{formError}</p>}
-      {serverError && <p className="rounded-xl bg-[var(--error-glow)] px-4 py-3 text-xs font-bold text-[var(--error)] sm:col-span-2">{serverError}</p>}
+      <Notification message={serverError} variant="error" onDismiss={onDismissServerError} />
       <input type="hidden" {...register("name")} />
       <input type="hidden" {...register("sku")} />
       <input type="hidden" {...register("imageUrl")} />

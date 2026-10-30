@@ -1,10 +1,11 @@
 "use client";
 
 import { Crown, Eye, Filter, Pencil, Plus, Search, Trash2, UserCheck, UserPlus, Users, X } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { KpiCard } from "../../../components/erp/kpi-card";
 import { Button } from "../../../components/primitives/button";
 import { ConfirmDialog, Field, Modal, SelectField } from "../../../components/primitives/primitives";
+import { Notification, type NotificationVariant } from "../../../components/primitives/notification";
 import { DataTable } from "../../../components/primitives/table";
 import { formatCurrency, formatTransactionTime, type Customer, type Transaction } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
@@ -32,12 +33,9 @@ export default function CustomersPage() {
   const [draftPurchaseHistory, setDraftPurchaseHistory] = useState(purchaseOptions[0]);
   const [draftRegistrationMonth, setDraftRegistrationMonth] = useState("All months");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; variant: NotificationVariant } | null>(null);
 
-  const [currentMonth, setCurrentMonth] = useState("");
-
-  useEffect(() => {
-    setCurrentMonth(getMonthKey(new Date()));
-  }, []);
+  const [currentMonth] = useState(() => getMonthKey(new Date()));
 
   const previousMonth = currentMonth ? getPreviousMonth(currentMonth) : "";
 
@@ -97,6 +95,7 @@ export default function CustomersPage() {
     setEditing(null);
     setDraft({ name: "", contactNumber: "", gender: "", cnicNumber: "" });
     setFieldErrors({});
+    setNotification(null);
     setEditorOpen(true);
   };
 
@@ -104,6 +103,7 @@ export default function CustomersPage() {
     setEditing(customer);
     setDraft({ name: customer.name, contactNumber: customer.contactNumber, gender: customer.gender ?? "", cnicNumber: formatCnic(customer.cnicNumber ?? "") });
     setFieldErrors({});
+    setNotification(null);
     setEditorOpen(true);
   };
 
@@ -145,6 +145,7 @@ export default function CustomersPage() {
     }
     setEditorOpen(false);
     setFieldErrors({});
+    setNotification({ variant: "success", message: editing ? "Customer updated successfully." : "Customer added successfully." });
   };
 
   return (
@@ -235,7 +236,8 @@ export default function CustomersPage() {
         </form>
       </Modal>
 
-      <ConfirmDialog open={Boolean(deleteTarget)} title="Delete customer?" description={deleteTarget ? `${deleteTarget.name} will be removed from the customer directory.` : undefined} confirmLabel="Delete customer" onClose={() => setDeleteTarget(null)} onConfirm={() => { if (deleteTarget) deleteCustomer(deleteTarget.id); setDeleteTarget(null); setSelected(null); }} />
+      <ConfirmDialog open={Boolean(deleteTarget)} title="Delete customer?" description={deleteTarget ? `${deleteTarget.name} will be removed from the customer directory.` : undefined} confirmLabel="Delete customer" onClose={() => setDeleteTarget(null)} onConfirm={() => { if (deleteTarget) { deleteCustomer(deleteTarget.id); setNotification({ variant: "success", message: "Customer deleted successfully." }); } setDeleteTarget(null); setSelected(null); }} />
+      <Notification message={notification?.message} variant={notification?.variant ?? "success"} onDismiss={() => setNotification(null)} />
     </div>
   );
 }

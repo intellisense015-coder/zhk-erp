@@ -5,6 +5,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { KpiCard } from "../../../components/erp/kpi-card";
 import { Button } from "../../../components/primitives/button";
 import { ConfirmDialog, Field, Modal, SelectField } from "../../../components/primitives/primitives";
+import { Notification, type NotificationVariant } from "../../../components/primitives/notification";
 import { DataTable } from "../../../components/primitives/table";
 import { formatCurrency, formatTransactionTime, getCapitalSummary, type Supplier, type SupplierPayment, type Transaction } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
@@ -35,6 +36,7 @@ export default function SuppliersPage() {
   const [draftActivity, setDraftActivity] = useState(activityOptions[0]);
   const [draftBalance, setDraftBalance] = useState(balanceOptions[0]);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; variant: NotificationVariant } | null>(null);
 
   const rows = useMemo<SupplierRow[]>(() => suppliers.map((supplier) => {
     const purchases = supplierPurchases(supplier, transactions);
@@ -98,6 +100,7 @@ export default function SuppliersPage() {
     setPaymentNote("");
     setPaymentCapitalId("");
     setPaymentError(null);
+    setNotification(null);
   };
 
   const closePayment = () => {
@@ -126,6 +129,7 @@ export default function SuppliersPage() {
       return;
     }
     closePayment();
+    setNotification({ variant: "success", message: "Supplier payment recorded successfully." });
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -147,6 +151,7 @@ export default function SuppliersPage() {
     }
     setEditorOpen(false);
     setFieldErrors({});
+    setNotification({ variant: "success", message: editing ? "Supplier updated successfully." : "Supplier added successfully." });
   };
 
   return (
@@ -241,7 +246,8 @@ export default function SuppliersPage() {
         </form>
       </Modal>
 
-      <ConfirmDialog open={Boolean(deleteTarget)} title="Delete supplier?" description={deleteTarget ? `${deleteTarget.name} will be removed from the supplier directory.` : undefined} confirmLabel="Delete supplier" onClose={() => setDeleteTarget(null)} onConfirm={() => { if (deleteTarget) deleteSupplier(deleteTarget.id); setDeleteTarget(null); setSelected(null); }} />
+      <ConfirmDialog open={Boolean(deleteTarget)} title="Delete supplier?" description={deleteTarget ? `${deleteTarget.name} will be removed from the supplier directory.` : undefined} confirmLabel="Delete supplier" onClose={() => setDeleteTarget(null)} onConfirm={() => { if (deleteTarget) { deleteSupplier(deleteTarget.id); setNotification({ variant: "success", message: "Supplier deleted successfully." }); } setDeleteTarget(null); setSelected(null); }} />
+      <Notification message={notification?.message} variant={notification?.variant ?? "success"} onDismiss={() => setNotification(null)} />
     </div>
   );
 }

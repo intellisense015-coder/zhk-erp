@@ -4,6 +4,7 @@ import { Filter, Plus, X, Boxes, CircleDollarSign, AlertTriangle, Search, Trash2
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/primitives/button";
 import { ConfirmDialog, Modal, SelectField } from "../../../components/primitives/primitives";
+import { Notification, type NotificationVariant } from "../../../components/primitives/notification";
 import { ProductFormModal } from "../../../components/erp/product-form-modal";
 import { KpiCard } from "../../../components/erp/kpi-card";
 import { DataTable } from "../../../components/primitives/table";
@@ -29,6 +30,7 @@ export default function InventoryPage() {
   const [kpi, setKpi] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [productError, setProductError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ message: string; variant: NotificationVariant } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   useEffect(() => { if (new URLSearchParams(window.location.search).get("modal") === "add") { const timer = window.setTimeout(() => setProductModalOpen(true), 0); return () => window.clearTimeout(timer); } }, []);
@@ -41,14 +43,15 @@ export default function InventoryPage() {
   const potentialProfit = records.reduce((sum, product) => sum + (product.sellingPrice - product.costPrice) * product.inStockQuantity, 0);
   const searched = useMemo(() => visible.filter((product) => `${productLabel(product)} ${product.name} ${product.color} ${product.sku} ${product.category} ${product.vendorName}`.toLowerCase().includes(search.trim().toLowerCase())), [visible, search]);
 
-  const openAddModal = () => { setProductError(null); setEditingProduct(null); setProductModalOpen(true); };
-  const openEditModal = (product: Product) => { setProductError(null); setEditingProduct(product); setProductModalOpen(true); };
+  const openAddModal = () => { setProductError(null); setNotification(null); setEditingProduct(null); setProductModalOpen(true); };
+  const openEditModal = (product: Product) => { setProductError(null); setNotification(null); setEditingProduct(product); setProductModalOpen(true); };
   const saveProduct = async (values: ProductFormValues) => {
     const result = await (editingProduct ? updateProduct(editingProduct.id, values) : addProduct(values));
     if (!result.ok) { setProductError(result.message); return result; }
     setProductError(null);
     setProductModalOpen(false);
     setEditingProduct(null);
+    setNotification({ variant: "success", message: editingProduct ? "Product updated successfully." : "Product added successfully." });
     return result;
   };
   const applyFilters = () => { setCategory(draftCategory); setStatus(draftStatus); setColor(draftColor); setFilterOpen(false); };
@@ -64,8 +67,9 @@ export default function InventoryPage() {
     <Modal open={filterOpen} title="Filter inventory" description="Choose the catalog records you want to see." onClose={() => setFilterOpen(false)}><div className="filter-inline-row p-5"><SelectField label="Category" value={draftCategory} onChange={(event) => setDraftCategory(event.target.value)}>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</SelectField><SelectField label="Stock status" value={draftStatus} onChange={(event) => setDraftStatus(event.target.value)}><option value="All status">All status</option><option value="Healthy">Healthy</option><option value="Low stock">Low stock</option><option value="Out of stock">Out of stock</option></SelectField><SelectField label="Color" value={draftColor} onChange={(event) => setDraftColor(event.target.value)}>{colorOptions.map((item) => <option key={item} value={item}>{item}</option>)}</SelectField><div className="primitive-dialog-actions filter-inline-actions px-0 pb-0"><Button variant="secondary" className="filter-cancel-button" onClick={() => setFilterOpen(false)}>Cancel</Button><Button variant="brand" className="filter-apply-button" onClick={applyFilters}>Apply filters</Button></div></div></Modal>
     <Modal open={Boolean(kpi)} title={kpi === "stock" ? "Stock valuation" : kpi === "units" ? "Catalog volume" : kpi === "profit" ? "Potential profit" : "Low stock alerts"} description="Inventory KPI details." onClose={() => setKpi(null)}><div className="grid gap-3 p-5">{kpi === "stock" && records.map((product) => <InfoRow key={product.id} label={`${product.name} · ${product.color || "Unspecified"}`} value={formatCurrency(product.inStockQuantity * product.costPrice)} />)}{kpi === "units" && <><InfoRow label="Units on hand" value={String(units)} /><InfoRow label="Active SKUs" value={String(records.length)} /></>}{kpi === "profit" && <InfoRow label="Estimated gross profit" value={formatCurrency(potentialProfit)} tone={potentialProfit >= 0 ? "success" : "error"} />}{kpi === "low" && records.filter((product) => product.inStockQuantity <= product.reorderLevel).map((product) => <InfoRow key={product.id} label={`${product.name} · ${product.color || "Unspecified"}`} value={`${product.inStockQuantity} units`} tone="error" />)}</div></Modal>
     <Modal open={Boolean(detailProduct)} title={detailProduct ? `${productLabel(detailProduct)} details` : "Product details"} description={detailProduct ? `${detailProduct.color || "Unspecified"} · ${detailProduct.sku}` : undefined} onClose={() => setDetailProduct(null)} className="product-details-modal-card">{detailProduct && <ProductDetails product={detailProduct} />}</Modal>
-    <ProductFormModal key={`${productModalOpen ? "open" : "closed"}-${editingProduct?.id ?? "new"}`} open={productModalOpen} product={editingProduct} onClose={() => { setProductModalOpen(false); setEditingProduct(null); setProductError(null); }} onSubmit={saveProduct} serverError={productError} />
-    <ConfirmDialog open={Boolean(deleteTarget)} title="Delete product?" description={deleteTarget ? `${deleteTarget.name} will be removed from inventory.` : undefined} confirmLabel="Delete product" onClose={() => setDeleteTarget(null)} onConfirm={async () => { if (deleteTarget) { const result = await deleteProduct(deleteTarget.id); if (!result.ok) setProductError(result.message); else setProductError(null); } setDeleteTarget(null); }} />
+    <ProductFormModal key={`${productModalOpen ? "open" : "closed"}-${editingProduct?.id ?? "new"}`} open={productModalOpen} product={editingProduct} onClose={() => { setProductModalOpen(false); setEditingProduct(null); setProductError(null); }} onSubmit={saveProduct} serverError={productError} onDismissServerError={() => setProductError(null)} />
+    <ConfirmDialog open={Boolean(deleteTarget)} title="Delete product?" description={deleteTarget ? `${deleteTarget.name} will be removed from inventory.` : undefined} confirmLabel="Delete product" onClose={() => setDeleteTarget(null)} onConfirm={async () => { if (deleteTarget) { const result = await deleteProduct(deleteTarget.id); if (!result.ok) setNotification({ variant: "error", message: result.message }); else setNotification({ variant: "success", message: "Product deleted successfully." }); } setDeleteTarget(null); }} />
+    <Notification message={notification?.message} variant={notification?.variant ?? "success"} onDismiss={() => setNotification(null)} />
   </div>;
 }
 
