@@ -13,6 +13,7 @@ import {
   readBusinessProfile,
   type BusinessProfile,
 } from "../../../lib/business-profile";
+import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 import styles from "./onboarding.module.css";
 
 type OnboardingDraft = Pick<
@@ -40,6 +41,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [draft, setDraft] = useState<OnboardingDraft>(emptyDraft);
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -63,6 +65,7 @@ export default function OnboardingPage() {
   const update = (field: keyof OnboardingDraft, value: string) => {
     setDraft((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
+    setSubmitError(null);
   };
 
   const validateStep = (currentStep: number) => {
@@ -94,7 +97,7 @@ export default function OnboardingPage() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!validateStep(step)) return;
 
@@ -104,6 +107,7 @@ export default function OnboardingPage() {
     }
 
     setSaving(true);
+    setSubmitError(null);
     const profile: BusinessProfile = {
       ...defaultBusinessProfile,
       ...draft,
@@ -116,7 +120,44 @@ export default function OnboardingPage() {
       gender: draft.gender,
     };
 
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      setSubmitError("Authentication is not configured for this environment.");
+      setSaving(false);
+      return;
+    }
+
+    const { data: memberships, error: membershipError } = await supabase
+      .from("workspace_members")
+      .select("workspace_id")
+      .limit(1);
+    if (membershipError) {
+      setSubmitError("We could not load your workspace access. Please try again.");
+      setSaving(false);
+      return;
+    }
+
+    let workspaceId = memberships?.[0]?.workspace_id as string | undefined;
+    if (!workspaceId) {
+      const { data, error } = await supabase.rpc("create_workspace", {
+        workspace_name: profile.businessName,
+        business_name: profile.businessName,
+        owner_first_name: profile.ownerFirstName,
+        owner_second_name: profile.ownerSecondName,
+        owner_email: profile.email,
+        owner_contact_number: profile.contactNumber,
+        owner_gender: profile.gender,
+      });
+      if (error || !data) {
+        setSubmitError("We could not create your secure workspace. Please try again.");
+        setSaving(false);
+        return;
+      }
+      workspaceId = data as string;
+    }
+
     window.localStorage.setItem(BUSINESS_PROFILE_STORAGE_KEY, JSON.stringify(profile));
+    window.localStorage.setItem("solexa-workspace-id", workspaceId);
     window.setTimeout(() => router.replace("/dashboard"), 300);
   };
 
@@ -233,6 +274,7 @@ export default function OnboardingPage() {
               </div>
             )}
 
+            {submitError && <p className="auth-field-error" role="alert">{submitError}</p>}
             <div className={styles.actions}>
               {step === 2 ? (
                 <Button

@@ -7,6 +7,8 @@ import { OsHeader } from "../os/header";
 import { OsSidebar } from "../os/sidebar";
 import { ErpStoreProvider } from "../../lib/erp-store";
 import { getOwnerDisplayName, hasCompletedOnboarding, readBusinessProfile, type BusinessProfile } from "../../lib/business-profile";
+import { createSupabaseBrowserClient } from "../../lib/supabase/browser";
+import { isSupabaseConfigured } from "../../lib/supabase/config";
 
 export function ErpShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() || "/dashboard";
@@ -19,10 +21,19 @@ export function ErpShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     const storedProfile = readBusinessProfile();
     const frame = window.requestAnimationFrame(() => setProfile(storedProfile));
-    if (!hasCompletedOnboarding(storedProfile)) router.replace("/onboarding");
+    const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+    if (!hasCompletedOnboarding(storedProfile) || (isSupabaseConfigured() && !workspaceId)) router.replace("/onboarding");
     return () => window.cancelAnimationFrame(frame);
   }, [router]);
+  const signOut = () => {
+    void (async () => {
+      const supabase = createSupabaseBrowserClient();
+      await supabase?.auth.signOut();
+      window.localStorage.removeItem("solexa-pin-passed");
+      router.replace("/login");
+    })();
+  };
   const navigate = (href: string) => router.push(href);
   const userName = getOwnerDisplayName(profile);
-  return <ErpStoreProvider><div className="erp-shell"><OsSidebar currentPath={pathname} mobileOpen={mobileOpen} onMobileOpenChange={setMobileOpen} onCollapsedChange={setSidebarCollapsed} onNavigate={navigate} onSignOut={() => navigate("/login")} userName={userName} userRole="Administrator" appName="Solexa" /><main className={`erp-main ${sidebarCollapsed ? "sidebar-collapsed" : "sidebar-expanded"}`}><OsHeader userName={userName} userRole="Administrator" pageTitle={pathname.slice(1) || "dashboard"} onOpenMobileMenu={() => setMobileOpen(true)} onNavigate={navigate} onSignOut={() => navigate("/login")} /><div key={pathname} className="erp-route-transition">{children}</div></main>{showRefreshCover && <div className="solexa-refresh-cover" role="status" aria-label="Loading Solexa"><Image src="/solexa-logo.png" alt="Solexa" width={64} height={64} priority className="solexa-refresh-logo" /><strong>solexa</strong><span>by intellisense</span></div>}</div></ErpStoreProvider>;
+  return <ErpStoreProvider><div className="erp-shell"><OsSidebar currentPath={pathname} mobileOpen={mobileOpen} onMobileOpenChange={setMobileOpen} onCollapsedChange={setSidebarCollapsed} onNavigate={navigate} onSignOut={signOut} userName={userName} userRole="Administrator" appName="Solexa" /><main className={`erp-main ${sidebarCollapsed ? "sidebar-collapsed" : "sidebar-expanded"}`}><OsHeader userName={userName} userRole="Administrator" pageTitle={pathname.slice(1) || "dashboard"} onOpenMobileMenu={() => setMobileOpen(true)} onNavigate={navigate} onSignOut={signOut} /><div key={pathname} className="erp-route-transition">{children}</div></main>{showRefreshCover && <div className="solexa-refresh-cover" role="status" aria-label="Loading Solexa"><Image src="/solexa-logo.png" alt="Solexa" width={64} height={64} priority className="solexa-refresh-logo" /><strong>solexa</strong><span>by intellisense</span></div>}</div></ErpStoreProvider>;
 }

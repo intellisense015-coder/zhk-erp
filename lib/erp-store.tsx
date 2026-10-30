@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { defaultExpenseCategories, getCapitalSummary, productBrands, type CapitalAccount, type CapitalEntry, type Customer, type Expense, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from "./erp-data";
+import { createInvoiceNumber } from "./invoice-utils";
 import type { ExchangeFormValues, ProductFormValues, PurchaseFormValues, SaleFormValues } from "./validations";
 
 // v2 intentionally starts with a clean workspace so the former demo snapshot
@@ -9,6 +10,7 @@ import type { ExchangeFormValues, ProductFormValues, PurchaseFormValues, SaleFor
 // under this namespace across reloads.
 const STORAGE_KEY = "solexa-erp-data-v2";
 type StoreData = { products: Product[]; transactions: Transaction[]; customers: Customer[]; suppliers: Supplier[]; supplierPayments: SupplierPayment[]; expenses: Expense[]; expenseCategories: string[]; capitalAccounts: CapitalAccount[]; capitalEntries: CapitalEntry[] };
+type ExpenseFormValues = Omit<Expense, "id" | "date" | "month" | "createdAt">;
 type StoreContextValue = StoreData & {
   hydrated: boolean;
   addProduct: (values: ProductFormValues) => { ok: true } | { ok: false; message: string };
@@ -25,9 +27,9 @@ type StoreContextValue = StoreData & {
   addSale: (values: SaleFormValues) => { ok: true } | { ok: false; message: string };
   addExchange: (values: ExchangeFormValues) => { ok: true } | { ok: false; message: string };
   addSupplierPayment: (values: { supplierId: string; amount: number; note?: string; capitalId?: string }) => { ok: true } | { ok: false; message: string };
-  addExpense: (values: Omit<Expense, "id" | "date" | "month" | "createdAt">) => { ok: true } | { ok: false; message: string };
+  addExpense: (values: ExpenseFormValues) => { ok: true } | { ok: false; message: string };
   addExpenseCategory: (name: string) => { ok: true } | { ok: false; message: string };
-  updateExpense: (id: string, values: Omit<Expense, "id" | "date" | "month" | "createdAt">) => { ok: true } | { ok: false; message: string };
+  updateExpense: (id: string, values: ExpenseFormValues) => { ok: true } | { ok: false; message: string };
   deleteExpense: (id: string) => void;
   addCapitalAccount: (values: { name: string; ownerName?: string; amount: number; note?: string }) => { ok: true } | { ok: false; message: string };
   addCapitalEntry: (values: { capitalId: string; type: "contribution" | "withdrawal"; amount: number; note?: string }) => { ok: true } | { ok: false; message: string };
@@ -62,17 +64,6 @@ function makeUniqueCustomerCode(requested: string, customers: Customer[], curren
   let suffix = 1;
   while (customers.some((customer) => customer.id !== currentId && customer.code === candidate)) candidate = `${base}-${suffix++}`;
   return candidate;
-}
-
-function makeInvoiceNumber(transactions: Transaction[]) {
-  const year = new Date().getFullYear();
-  const prefix = `INV-${year}-`;
-  const highest = transactions.reduce((max, transaction) => {
-    if (!transaction.invoiceNumber?.startsWith(prefix)) return max;
-    const number = Number(transaction.invoiceNumber.slice(prefix.length));
-    return Number.isFinite(number) ? Math.max(max, number) : max;
-  }, 0);
-  return `${prefix}${String(highest + 1).padStart(4, "0")}`;
 }
 
 export function ErpStoreProvider({ children }: { children: ReactNode }) {
@@ -178,7 +169,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const createdAt = new Date().toISOString();
       const { date, month } = getDateParts();
       const total = values.inStockQuantity * values.costPrice;
-      const purchaseTransaction: Transaction | null = values.inStockQuantity > 0 ? { id: makeId("purchase"), type: "purchase", source: "supplier", name: product.name, productId, unitCost: values.costPrice, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: values.inStockQuantity, amount: total, paidAmount: 0, outstandingAmount: total, time: "Just now", createdAt, date, month } : null;
+      const purchaseTransaction: Transaction | null = values.inStockQuantity > 0 ? { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), source: "supplier", name: product.name, productId, unitCost: values.costPrice, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: values.inStockQuantity, amount: total, paidAmount: 0, outstandingAmount: total, time: "Just now", createdAt, date, month } : null;
       commit({ ...data, products: [...data.products, product], transactions: purchaseTransaction ? [purchaseTransaction, ...data.transactions] : data.transactions, suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
       return { ok: true };
     },
@@ -204,7 +195,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const createdAt = new Date().toISOString();
       const { date, month } = getDateParts();
       const total = stockIncrease * values.costPrice;
-      const purchaseTransaction: Transaction | null = stockIncrease > 0 ? { id: makeId("purchase"), type: "purchase", source: "supplier", name, productId: id, unitCost: values.costPrice, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: stockIncrease, amount: total, paidAmount: 0, outstandingAmount: total, time: "Just now", createdAt, date, month } : null;
+      const purchaseTransaction: Transaction | null = stockIncrease > 0 ? { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), source: "supplier", name, productId: id, unitCost: values.costPrice, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: stockIncrease, amount: total, paidAmount: 0, outstandingAmount: total, time: "Just now", createdAt, date, month } : null;
       commit({ ...data, products: data.products.map((product) => product.id === id ? { ...product, ...values, name, sku, brand, model, color, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company } : product), transactions: purchaseTransaction ? [purchaseTransaction, ...data.transactions] : data.transactions, suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
       return { ok: true };
     },
@@ -280,9 +271,9 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (values.paidAmount > total) return { ok: false, message: "Paid amount cannot exceed the purchase total." };
       const capitalId = values.fundingSource === "capital" ? values.capitalId : undefined;
       if (values.fundingSource === "capital" && !capitalId) return { ok: false, message: "Choose a capital account for this purchase." };
-      if (capitalId && values.paidAmount > getCapitalSummary(capitalId, data.capitalEntries, data.transactions, data.supplierPayments, data.expenses).available) return { ok: false, message: "The purchase payment exceeds the available capital." };
+      if (capitalId && values.paidAmount > getCapitalSummary(capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available) return { ok: false, message: "The purchase payment exceeds the available capital." };
       const { date, month } = getDateParts();
-      const transaction: Transaction = { id: makeId("purchase"), type: "purchase", name: product.name, productId: product.id, unitCost: values.unitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: values.quantity, amount: total, paidAmount: values.paidAmount, outstandingAmount: total - values.paidAmount, fundingSource: values.fundingSource ?? "other", capitalId, time: "Just now", createdAt: new Date().toISOString(), date, month };
+      const transaction: Transaction = { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), name: product.name, productId: product.id, unitCost: values.unitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: values.quantity, amount: total, paidAmount: values.paidAmount, outstandingAmount: total - values.paidAmount, fundingSource: values.fundingSource ?? "other", capitalId, time: "Just now", createdAt: new Date().toISOString(), date, month };
       const nextSuppliers = existingSupplier ? data.suppliers.map((item) => item.id === supplier.id ? supplier : item) : [supplier, ...data.suppliers];
       const payment = values.paidAmount > 0 ? { id: makeId("payment"), supplierId: supplier.id, amount: values.paidAmount, note: "Paid with purchase", capitalId, date, time: "Just now", createdAt: new Date().toISOString() } : null;
       commit({ products: data.products.map((item) => item.id === product.id ? { ...item, inStockQuantity: item.inStockQuantity + values.quantity, received: item.received + values.quantity, costPrice: values.unitCost } : item), transactions: [transaction, ...data.transactions], customers: data.customers, suppliers: nextSuppliers, supplierPayments: payment ? [payment, ...data.supplierPayments] : data.supplierPayments, expenses: data.expenses, expenseCategories: data.expenseCategories, capitalAccounts: data.capitalAccounts, capitalEntries: data.capitalEntries });
@@ -306,9 +297,8 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     addExpense: (values) => {
       const description = values.description.trim();
       if (!description || !values.category.trim() || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Category, description, and an amount greater than zero are required." };
-      if (values.capitalId && values.amount > getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments, data.expenses).available) return { ok: false, message: "The expense exceeds the available capital." };
       const { date, month } = getDateParts();
-      const expense: Expense = { ...values, id: makeId("expense"), category: values.category.trim(), description, amount: values.amount, date, month, createdAt: new Date().toISOString() };
+      const expense: Expense = { ...values, id: makeId("expense"), invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), category: values.category.trim(), description, amount: values.amount, date, month, createdAt: new Date().toISOString() };
       commit({ ...data, expenses: [expense, ...data.expenses] });
       return { ok: true };
     },
@@ -324,10 +314,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (!existing) return { ok: false, message: "Expense record not found." };
       const description = values.description.trim();
       if (!description || !values.category.trim() || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Category, description, and an amount greater than zero are required." };
-      const currentCapitalUsage = existing.capitalId && existing.capitalId === values.capitalId ? existing.amount : 0;
-      const available = values.capitalId ? getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments, data.expenses).available + currentCapitalUsage : Number.POSITIVE_INFINITY;
-      if (values.capitalId && values.amount > available) return { ok: false, message: "The expense exceeds the available capital." };
-      commit({ ...data, expenses: data.expenses.map((expense) => expense.id === id ? { ...expense, ...values, category: values.category.trim(), description, amount: values.amount, capitalId: values.capitalId } : expense) });
+      commit({ ...data, expenses: data.expenses.map((expense) => expense.id === id ? { id: expense.id, invoiceNumber: expense.invoiceNumber, category: values.category.trim(), description, amount: values.amount, date: expense.date, month: expense.month, paymentMethod: values.paymentMethod, note: values.note, createdAt: expense.createdAt } : expense) });
       return { ok: true };
     },
     deleteExpense: (id) => commit({ ...data, expenses: data.expenses.filter((expense) => expense.id !== id) }),
@@ -344,7 +331,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     addCapitalEntry: (values) => {
       const account = data.capitalAccounts.find((item) => item.id === values.capitalId);
       if (!account || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Choose a capital account and enter an amount greater than zero." };
-      if (values.type === "withdrawal" && values.amount > getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments, data.expenses).available) return { ok: false, message: "The withdrawal exceeds the available capital." };
+      if (values.type === "withdrawal" && values.amount > getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available) return { ok: false, message: "The withdrawal exceeds the available capital." };
       const { date, month } = getDateParts();
       const entry: CapitalEntry = { id: makeId("capital-entry"), ...values, amount: values.amount, note: values.note?.trim(), date, month, createdAt: new Date().toISOString() };
       commit({ ...data, capitalEntries: [entry, ...data.capitalEntries] });
@@ -376,7 +363,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (error && "error" in error) return { ok: false, message: error.error };
       const items = lineItems.filter((line): line is SaleLineItem => !("error" in line));
       const { date, month } = getDateParts();
-      const transaction: Transaction = { id: makeId("sale"), type: "sale", invoiceNumber: makeInvoiceNumber(data.transactions), name: items.length === 1 ? items[0].name : `${items[0].name} + ${items.length - 1} more`, party: customer.name, customerId: customer.id, customerContactNumber: customer.contactNumber, customerCode: customer.code, quantity: items.reduce((sum, line) => sum + line.quantity, 0), amount: items.reduce((sum, line) => sum + line.amount, 0), profit: items.reduce((sum, line) => sum + line.profit, 0), time: "Just now", createdAt: new Date().toISOString(), date, month, items };
+      const transaction: Transaction = { id: makeId("sale"), type: "sale", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), name: items.length === 1 ? items[0].name : `${items[0].name} + ${items.length - 1} more`, party: customer.name, customerId: customer.id, customerContactNumber: customer.contactNumber, customerCode: customer.code, quantity: items.reduce((sum, line) => sum + line.quantity, 0), amount: items.reduce((sum, line) => sum + line.amount, 0), profit: items.reduce((sum, line) => sum + line.profit, 0), time: "Just now", createdAt: new Date().toISOString(), date, month, items };
       commit({ products: data.products.map((product) => { const sold = items.find((item) => item.productId === product.id); return sold ? { ...product, inStockQuantity: product.inStockQuantity - sold.quantity, sold: product.sold + sold.quantity } : product; }), transactions: [transaction, ...data.transactions], customers: data.customers.some((item) => item.id === customer.id) ? data.customers.map((item) => item.id === customer.id ? customer : item) : [customer, ...data.customers], suppliers: data.suppliers, supplierPayments: data.supplierPayments, expenses: data.expenses, expenseCategories: data.expenseCategories, capitalAccounts: data.capitalAccounts, capitalEntries: data.capitalEntries });
       return { ok: true };
     },
@@ -425,7 +412,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         if (values.supplierPaidAmount < 0 || values.supplierPaidAmount > supplierTotal) return { ok: false, message: "Supplier payment cannot exceed the supplier purchase total." };
         const existingSupplier = data.suppliers.find((supplierRecord) => supplierRecord.id === values.supplierId || normalizeName(supplierRecord.name) === normalizeName(supplierName));
         supplier = existingSupplier ? { ...existingSupplier, name: supplierName, contactNumber: supplierContact, company: supplierCompany } : { id: makeId("supplier"), name: supplierName, contactNumber: supplierContact, company: supplierCompany, createdAt: new Date().toISOString() };
-        purchaseTransaction = { id: makeId("purchase"), type: "purchase", source: "supplier", exchangeId, name: receivedProduct.name, productId: receivedProduct.id, unitCost: values.supplierUnitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: receivedQuantity, amount: supplierTotal, paidAmount: values.supplierPaidAmount, outstandingAmount: supplierTotal - values.supplierPaidAmount, time: "Just now", createdAt: new Date().toISOString(), date, month };
+        purchaseTransaction = { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), source: "supplier", exchangeId, name: receivedProduct.name, productId: receivedProduct.id, unitCost: values.supplierUnitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: receivedQuantity, amount: supplierTotal, paidAmount: values.supplierPaidAmount, outstandingAmount: supplierTotal - values.supplierPaidAmount, time: "Just now", createdAt: new Date().toISOString(), date, month };
         purchasePayment = values.supplierPaidAmount > 0 ? { id: makeId("payment"), supplierId: supplier.id, amount: values.supplierPaidAmount, note: "Paid with exchange arrangement", date, time: "Just now", createdAt: new Date().toISOString() } : null;
       }
 
@@ -435,7 +422,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const receivingUnitCost = receiveSource === "supplier" ? values.supplierUnitCost : receivedProduct?.costPrice ?? 0;
       const buybackTransaction: Transaction = { id: makeId("buyback"), type: "purchase", source: "customer-trade-in", exchangeId, name: givenProduct.name, productId: givenProduct.id, unitCost: values.tradeInUnitValue, party: customer.name, customerId: customer.id, customerContactNumber: customer.contactNumber, customerCode: customer.code, quantity: values.givenQuantity, amount: tradeInTotal, paidAmount: tradeInTotal, outstandingAmount: 0, time: "Just now", createdAt: new Date().toISOString(), date, month };
       const saleItems: SaleLineItem[] = !isBuyback && receivedProduct ? [{ productId: receivedProduct.id, name: receivedProduct.name, sku: receivedProduct.sku, color: receivedProduct.color, quantity: receivedQuantity, unitSellingPrice: receivedUnitSellingPrice, unitCost: receivingUnitCost, discount: 0, amount: saleTotal, profit: saleTotal - receivedQuantity * receivingUnitCost }] : [];
-      const saleTransaction: Transaction | undefined = !isBuyback && receivedProduct ? { id: makeId("sale"), type: "sale", invoiceNumber: makeInvoiceNumber(data.transactions), source: "exchange", exchangeId, name: receivedProduct.name, party: customer.name, customerId: customer.id, customerContactNumber: customer.contactNumber, customerCode: customer.code, quantity: receivedQuantity, amount: saleTotal, profit: saleItems[0].profit, tradeInCredit: tradeInTotal, amountDue, time: "Just now", createdAt: new Date().toISOString(), date, month, items: saleItems } : undefined;
+      const saleTransaction: Transaction | undefined = !isBuyback && receivedProduct ? { id: makeId("sale"), type: "sale", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses, ...(purchaseTransaction ? [purchaseTransaction] : [])]), source: "exchange", exchangeId, name: receivedProduct.name, party: customer.name, customerId: customer.id, customerContactNumber: customer.contactNumber, customerCode: customer.code, quantity: receivedQuantity, amount: saleTotal, profit: saleItems[0].profit, tradeInCredit: tradeInTotal, amountDue, time: "Just now", createdAt: new Date().toISOString(), date, month, items: saleItems } : undefined;
       const nextSuppliers = !isBuyback && receiveSource === "supplier" && supplier ? (data.suppliers.some((item) => item.id === supplier?.id) ? data.suppliers.map((item) => item.id === supplier?.id ? supplier as Supplier : item) : [supplier, ...data.suppliers]) : data.suppliers;
       const nextProducts = data.products.map((product) => {
         if (product.id === givenProduct.id) return { ...product, inStockQuantity: product.inStockQuantity + values.givenQuantity, received: product.received + values.givenQuantity, costPrice: values.tradeInUnitValue };
@@ -449,11 +436,12 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     addSupplierPayment: (values) => {
       const supplier = data.suppliers.find((item) => item.id === values.supplierId);
       if (!supplier || values.amount <= 0) return { ok: false, message: "Choose a supplier and enter a payment greater than zero." };
-      const purchased = data.transactions.filter((transaction) => transaction.type === "purchase" && transaction.supplierId === supplier.id).reduce((sum, transaction) => sum + transaction.amount, 0);
+      const supplierName = normalizeName(supplier.name);
+      const purchased = data.transactions.filter((transaction) => transaction.type === "purchase" && (transaction.supplierId === supplier.id || normalizeName(transaction.party) === supplierName)).reduce((sum, transaction) => sum + transaction.amount, 0);
       const paid = data.supplierPayments.filter((payment) => payment.supplierId === supplier.id).reduce((sum, payment) => sum + payment.amount, 0);
       const outstanding = purchased + (supplier.openingBalance ?? 0) - paid;
       if (values.amount > outstanding) return { ok: false, message: "Payment cannot exceed the supplier's outstanding balance." };
-      if (values.capitalId && values.amount > getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments, data.expenses).available) return { ok: false, message: "The supplier payment exceeds the available capital." };
+      if (values.capitalId && values.amount > getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available) return { ok: false, message: "The supplier payment exceeds the available capital." };
       const { date } = getDateParts();
       const payment: SupplierPayment = { id: makeId("payment"), supplierId: supplier.id, amount: values.amount, capitalId: values.capitalId, note: values.note?.trim(), date, time: "Just now", createdAt: new Date().toISOString() };
       commit({ ...data, supplierPayments: [payment, ...data.supplierPayments] });

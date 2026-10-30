@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, CircleDollarSign, FileText, Filter, Pencil, Search, ShoppingCart, TrendingUp, X } from "lucide-react";
+import { Check, CircleDollarSign, Eye, Filter, Pencil, Search, ShoppingCart, TrendingUp, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/primitives/button";
@@ -53,7 +53,7 @@ export default function SalesPage() {
     { key: "amount", header: "Sale total", sortable: true, align: "right" as const, accessor: (sale: Transaction) => <span className="font-semibold value-positive">+{formatCurrency(editingSaleId === sale.id && editDraft ? editDraft.items.reduce((sum, item) => sum + item.amount, 0) : sale.amount)}</span> },
     { key: "profit", header: "Gross profit", sortable: true, align: "right" as const, accessor: (sale: Transaction) => <span className="font-semibold value-positive">+{formatCurrency(editingSaleId === sale.id && editDraft ? editDraft.items.reduce((sum, item) => sum + item.profit, 0) : sale.profit ?? 0)}</span> },
     { key: "time", header: "Recorded", sortable: true, accessor: (sale: Transaction) => sale.time },
-    { key: "actions", header: "Actions", align: "right" as const, accessor: (sale: Transaction) => editingSaleId === sale.id ? <div className="sales-inline-actions" onClick={(event) => event.stopPropagation()}><button type="button" className="sales-inline-save" onClick={() => saveEditing(sale)}><Check size={13} />Save</button><button type="button" className="sales-inline-cancel cancel-button" onClick={cancelEditing}>Cancel</button></div> : <div className="table-row-actions"><button type="button" className="table-icon-button" aria-label={`Open invoice for ${sale.party}`} title="Open invoice" onClick={(event) => { event.stopPropagation(); router.push(`/invoices?id=${sale.id}`); }}><FileText size={14} /></button><button type="button" className="table-icon-button" aria-label={`Edit ${sale.party}'s sale`} title="Edit sale" onClick={(event) => { event.stopPropagation(); startEditing(sale); }} disabled={!sale.items?.length}><Pencil size={14} /></button></div> },
+    { key: "actions", header: "Actions", align: "right" as const, accessor: (sale: Transaction) => editingSaleId === sale.id ? <div className="sales-inline-actions" onClick={(event) => event.stopPropagation()}><button type="button" className="sales-inline-save" onClick={() => saveEditing(sale)}><Check size={13} />Save</button><button type="button" className="sales-inline-cancel cancel-button" onClick={cancelEditing}>Cancel</button></div> : <div className="table-row-actions"><button type="button" className="table-icon-button" aria-label={`View invoice for ${sale.party}`} title="View invoice" onClick={(event) => { event.stopPropagation(); router.push(`/invoices?id=${sale.id}&type=sale`); }}><Eye size={14} /></button><button type="button" className="table-icon-button" aria-label={`Edit ${sale.party}'s sale`} title="Edit sale" onClick={(event) => { event.stopPropagation(); startEditing(sale); }} disabled={!sale.items?.length}><Pencil size={14} /></button></div> },
   ];
 
   return <div className="erp-content inventory-page-enter">

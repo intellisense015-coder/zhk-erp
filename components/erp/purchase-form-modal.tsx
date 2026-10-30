@@ -12,7 +12,7 @@ import { formatCurrency, getCapitalSummary, productBrands } from "../../lib/erp-
 type PurchaseFormModalProps = { open: boolean; onClose: () => void; onSubmit: (values: PurchaseFormValues) => void; onAddProduct?: () => void };
 
 export function PurchaseFormModal({ open, onClose, onSubmit, onAddProduct }: PurchaseFormModalProps) {
-  const { products, suppliers, capitalAccounts, capitalEntries, transactions, supplierPayments, expenses, hydrated } = useErpStore();
+  const { products, suppliers, capitalAccounts, capitalEntries, transactions, supplierPayments, hydrated } = useErpStore();
   const defaultValues = useMemo<PurchaseFormValues>(() => ({ supplierId: "", vendorName: "", supplierContactNumber: "", supplierCompany: "", productId: products[0]?.id ?? "", quantity: 1, unitCost: products[0]?.costPrice ?? 1, paidAmount: 0, capitalId: "", fundingSource: "supplier-credit" }), [products]);
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset, setValue, control } = useForm<PurchaseFormValues>({ resolver: zodResolver(purchaseSchema), defaultValues });
   const supplierId = useWatch({ control, name: "supplierId" }) || "";
@@ -53,7 +53,7 @@ export function PurchaseFormModal({ open, onClose, onSubmit, onAddProduct }: Pur
       </SelectField>
       {fundingSource === "capital" && <SelectField label="Capital account" value={capitalId} hint={errors.capitalId?.message} onChange={(event) => setValue("capitalId", event.target.value, { shouldDirty: true, shouldValidate: true })}>
         <option value="">Select capital account</option>
-        {capitalAccounts.map((account) => { const balance = getCapitalSummary(account.id, capitalEntries, transactions, supplierPayments, expenses).available; return <option key={account.id} value={account.id}>{account.name} · {formatCurrency(balance)} available</option>; })}
+        {capitalAccounts.map((account) => { const balance = getCapitalSummary(account.id, capitalEntries, transactions, supplierPayments).available; return <option key={account.id} value={account.id}>{account.name} · {formatCurrency(balance)} available</option>; })}
       </SelectField>}
       <div className="purchase-calculation-card sm:col-span-2"><span>Qty × Unit Cost</span><strong>{quantity} × {formatCurrency(unitCost)}</strong><b>= {formatCurrency(total)}</b></div>
       <div className="primitive-dialog-actions px-0 pb-0 sm:col-span-2"><Button type="button" variant="secondary" className="cancel-button" onClick={onClose}>Cancel</Button><Button type="submit" variant="brand" disabled={isSubmitting}>Add stock</Button></div>

@@ -301,6 +301,7 @@ export type SupplierPayment = {
 
 export type Expense = {
   id: string;
+  invoiceNumber?: string;
   category: string;
   description: string;
   amount: number;
@@ -308,7 +309,6 @@ export type Expense = {
   month: string;
   paymentMethod?: string;
   note?: string;
-  capitalId?: string;
   createdAt?: string;
 };
 
@@ -378,8 +378,8 @@ export const formatCompactCurrency = (value: number) => {
   return formatCurrency(value);
 };
 
-export function getMonthOptions(records: Transaction[]) {
-  const recordedMonths = Array.from(new Set(records.map((record) => record.month).filter(Boolean)));
+export function getMonthOptions(records: Array<{ month?: string }>) {
+  const recordedMonths = Array.from(new Set(records.map((record) => record.month).filter((value): value is string => Boolean(value))));
   const years = Array.from(new Set(recordedMonths.map((value) => value.match(/^(\d{4})-\d{2}$/)?.[1]).filter((value): value is string => Boolean(value))));
   const months = Array.from(new Set([
     ...recordedMonths,
@@ -412,14 +412,13 @@ export function formatLongDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" }).format(date);
 }
 
-export function getCapitalSummary(capitalId: string, entries: CapitalEntry[], transactions: Transaction[], supplierPayments: SupplierPayment[], expenses: Expense[]) {
+export function getCapitalSummary(capitalId: string, entries: CapitalEntry[], transactions: Transaction[], supplierPayments: SupplierPayment[]) {
   const contributed = entries.filter((entry) => entry.capitalId === capitalId && entry.type === "contribution").reduce((sum, entry) => sum + entry.amount, 0);
   const withdrawn = entries.filter((entry) => entry.capitalId === capitalId && entry.type === "withdrawal").reduce((sum, entry) => sum + entry.amount, 0);
   const purchases = transactions.filter((transaction) => transaction.type === "purchase" && transaction.capitalId === capitalId).reduce((sum, transaction) => sum + (transaction.paidAmount ?? 0), 0);
   // The initial payment recorded with a purchase is represented both on the
   // purchase and in the supplier-payment ledger. Count it once here.
   const payments = supplierPayments.filter((payment) => payment.capitalId === capitalId && payment.note !== "Paid with purchase").reduce((sum, payment) => sum + payment.amount, 0);
-  const expenseTotal = expenses.filter((expense) => expense.capitalId === capitalId).reduce((sum, expense) => sum + expense.amount, 0);
-  const used = purchases + payments + expenseTotal;
+  const used = purchases + payments;
   return { contributed, withdrawn, used, available: contributed - withdrawn - used };
 }

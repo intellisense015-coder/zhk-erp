@@ -1,16 +1,18 @@
 "use client";
 
-import { ArrowDownLeft, ClipboardList, Filter, PackagePlus, Receipt, Search, X } from "lucide-react";
+import { ArrowDownLeft, ClipboardList, Eye, Filter, PackagePlus, Receipt, Search, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { KpiCard } from "../../../components/erp/kpi-card";
 import { Button } from "../../../components/primitives/button";
 import { Modal, SelectField } from "../../../components/primitives/primitives";
 import { DataTable, TableBadge } from "../../../components/primitives/table";
-import { formatCompactCurrency, formatCurrency, formatTransactionTime, getMonthOptions, type Transaction } from "../../../lib/erp-data";
+import { formatCompactCurrency, formatCurrency, formatTransactionTime, getMonthOptions } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
 
 export default function PurchasesPage() {
   const { products, transactions, suppliers, supplierPayments } = useErpStore();
+  const router = useRouter();
   const purchases = useMemo(() => transactions.filter((transaction) => transaction.type === "purchase"), [transactions]);
   const monthOptions = useMemo(() => getMonthOptions(purchases), [purchases]);
   const supplierOptions = useMemo(() => [
@@ -22,7 +24,6 @@ export default function PurchasesPage() {
   const [draftMonth, setDraftMonth] = useState("all");
   const [draftSupplier, setDraftSupplier] = useState("all");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [selected, setSelected] = useState<Transaction | null>(null);
   const [search, setSearch] = useState("");
 
   const visible = useMemo(() => purchases.filter((purchase) => {
@@ -108,6 +109,7 @@ export default function PurchasesPage() {
             { key: "outstandingAmount", header: "Outstanding", width: "12%", sortable: true, align: "right", accessor: (purchase) => <TableBadge tone={(purchase.outstandingAmount ?? purchase.amount) > 0 ? "danger" : "success"}>{formatCurrency(purchase.outstandingAmount ?? Math.max(0, purchase.amount - (purchase.paidAmount ?? 0)))}</TableBadge> },
             { key: "funding", header: "Funding", width: "12%", sortable: true, accessor: (purchase) => purchase.fundingSource === "capital" ? <TableBadge tone="success">Capital</TableBadge> : purchase.fundingSource === "supplier-credit" ? <TableBadge tone="warning">Credit</TableBadge> : <span className="text-[var(--text-muted)]">Other</span> },
             { key: "date", header: "Recorded", width: "12%", sortable: true, accessor: (purchase) => <span className="text-[var(--text-muted)]">{formatTransactionTime(purchase)}</span> },
+            { key: "actions", header: "View", align: "right", accessor: (purchase) => <button type="button" className="table-icon-button" aria-label={`View invoice for ${purchase.party}`} title="View invoice" onClick={(event) => { event.stopPropagation(); router.push(`/invoices?id=${purchase.id}&type=purchase`); }}><Eye size={14} /></button> },
           ]}
         />
       </section>
@@ -125,18 +127,6 @@ export default function PurchasesPage() {
         </div>
       </Modal>
 
-      <Modal open={Boolean(selected)} title="Purchase details" description={selected ? `${selected.name} · ${formatTransactionTime(selected)}` : undefined} onClose={() => setSelected(null)}>
-        {selected && <PurchaseDetail purchase={selected} />}
-      </Modal>
     </div>
   );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl bg-[var(--surface-soft)] p-3"><p className="text-[10px] text-[var(--text-muted)]">{label}</p><p className="mt-1 text-sm font-bold">{value}</p></div>;
-}
-
-function PurchaseDetail({ purchase }: { purchase: Transaction }) {
-  const outstanding = purchase.outstandingAmount ?? Math.max(0, purchase.amount - (purchase.paidAmount ?? 0));
-  return <div className="p-5"><div className="grid grid-cols-2 gap-3"><InfoRow label="Supplier" value={purchase.party} /><InfoRow label="Product" value={purchase.name} /><InfoRow label="Quantity" value={String(purchase.quantity)} /><InfoRow label="Unit cost" value={formatCurrency(purchase.unitCost ?? (purchase.quantity ? purchase.amount / purchase.quantity : 0))} /><InfoRow label="Purchase amount" value={formatCurrency(purchase.amount)} /><InfoRow label="Paid at purchase" value={formatCurrency(purchase.paidAmount ?? 0)} /><InfoRow label="Outstanding at purchase" value={formatCurrency(outstanding)} /><InfoRow label="Recorded" value={formatTransactionTime(purchase)} /></div><div className="mt-4 rounded-xl bg-[var(--surface-soft)] p-3 text-xs text-[var(--text-muted)]">Supplier payments are recorded separately and update the supplier&apos;s current balance.</div></div>;
 }

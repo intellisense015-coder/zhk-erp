@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { Moon, Sun } from "lucide-react";
+import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 
 const PIN_LENGTH = 6;
 
@@ -17,6 +18,7 @@ export default function PinPage() {
   const [error, setError] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [heroSource, setHeroSource] = useState("/auth/loomledger-pin-hero.png");
+  const [sessionReady, setSessionReady] = useState(false);
 
   const toggleTheme = (mode: "light" | "dark") => {
     setTheme(mode);
@@ -58,7 +60,28 @@ export default function PinPage() {
   };
 
   useEffect(() => {
+    let active = true;
+    const verifySession = async () => {
+      const supabase = createSupabaseBrowserClient();
+      if (!supabase) {
+        router.replace("/login");
+        return;
+      }
+      const { data, error } = await supabase.auth.getSession();
+      if (!active) return;
+      if (error || !data.session) {
+        router.replace("/login");
+        return;
+      }
+      setSessionReady(true);
+    };
+    void verifySession();
+    return () => { active = false; };
+  }, [router]);
+
+  useEffect(() => {
     if (digits.join("").length !== PIN_LENGTH) return;
+    if (!sessionReady) return;
     const timer = window.setTimeout(() => {
       setLoading(true);
       window.localStorage.setItem("solexa-pin-passed", "true");
@@ -66,7 +89,7 @@ export default function PinPage() {
       router.replace(storedProfile ? "/dashboard" : "/onboarding");
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [digits, router]);
+  }, [digits, router, sessionReady]);
 
   return (
     <main className="pin-reference-page">
@@ -87,14 +110,14 @@ export default function PinPage() {
             <button type="button" onClick={() => toggleTheme("dark")} className={theme === "dark" ? "is-active" : ""}><Moon size={12} /><span>Dark</span></button>
           </div>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="pin-reference-form">
-            <h1>Enter your PIN</h1>
-            <p>Use your 6-digit security PIN.</p>
+            <h1>Continue to Solexa</h1>
+            <p>Enter your 6-digit app PIN. Your Supabase session protects database access.</p>
             <div className="pin-reference-inputs">
               {digits.map((digit, index) => (
                 <input key={index} ref={(element) => { refs.current[index] = element; }} type="text" inputMode="numeric" pattern="\\d*" maxLength={1} value={digit} disabled={loading} onChange={(event) => handleChange(index, event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { clear(); return; } if (event.key === "Backspace" && !digits[index] && index > 0) refs.current[index - 1]?.focus(); }} onPaste={handlePaste} aria-label={`Digit ${index + 1}`} className={`pin-reference-input${error ? " has-error" : ""}${loading ? " is-loading" : ""}`} />
               ))}
             </div>
-            <div className="pin-reference-feedback" aria-live="polite">{error ? <span>{error}</span> : loading ? <span className="is-loading-message">Verifying securely...</span> : null}</div>
+            <div className="pin-reference-feedback" aria-live="polite">{error ? <span>{error}</span> : loading ? <span className="is-loading-message">Opening your workspace...</span> : null}</div>
             <div className="pin-reference-links"><Link href="/forgot-pin">Forgot PIN?</Link><span>•</span><button type="button" onClick={() => router.push("/login")}>Back to sign in</button></div>
           </motion.div>
         </section>

@@ -2,16 +2,35 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "../../../components/primitives/button";
 import { AuthInput, PasswordInput } from "../../../components/auth/auth-fields";
 import { loginSchema, type LoginFormValues } from "../../../lib/validations";
+import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 
 export default function LoginPage() {
   const router = useRouter();
+  const [authError, setAuthError] = useState<string | null>(null);
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema), defaultValues: { email: "", password: "" } });
-  const onSubmit = async () => { router.push("/pin"); };
+  const onSubmit = async ({ email, password }: LoginFormValues) => {
+    setAuthError(null);
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      setAuthError("Authentication is not configured for this environment.");
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setAuthError("Unable to sign in with those details.");
+      return;
+    }
+
+    window.localStorage.removeItem("solexa-pin-passed");
+    router.replace("/pin");
+  };
 
   return <>
     <h1 className="auth-login-title">Welcome back</h1>
@@ -21,6 +40,7 @@ export default function LoginPage() {
       <PasswordInput label="Password" autoComplete="current-password" placeholder="****************" error={errors.password?.message} {...register("password")} />
       <label className="auth-remember"><input type="checkbox" defaultChecked />Remember this device</label>
       <div className="auth-forgot"><Link className="auth-link" href="/forgot-password">Forgot password?</Link></div>
+      {authError && <p className="auth-field-error" role="alert">{authError}</p>}
       <Button type="submit" variant="brand" loading={isSubmitting} className="auth-submit-button">{isSubmitting ? "Signing in..." : "Sign in"}</Button>
     </form>
 

@@ -1,15 +1,36 @@
 "use client";
 
-import { formatCurrency, getTransactionItems, type Transaction } from "../../lib/erp-data";
-import { getOwnerDisplayName, type BusinessProfile } from "../../lib/business-profile";
+import { formatCurrency } from "../../lib/erp-data";
+import type { InvoiceDocumentModel } from "../../lib/invoice-utils";
+import { type BusinessProfile } from "../../lib/business-profile";
 
-export function InvoiceDocument({ transaction, profile }: { transaction: Transaction; profile: BusinessProfile | null }) {
-  const items = getTransactionItems(transaction);
-  return <article className="invoice-print-root mx-auto max-w-[820px] rounded-2xl bg-white p-8 text-slate-900 shadow-sm print:shadow-none print:max-w-none print:rounded-none sm:p-10">
-    <div className="mb-10 flex items-start justify-between gap-6 border-b border-slate-200 pb-7"><div><p className="mb-2 text-xs font-bold uppercase tracking-[0.22em] text-slate-500">Invoice</p><h2 className="text-2xl font-black tracking-tight">{profile?.businessName || "Solexa by Intellisense"}</h2><p className="mt-2 text-xs text-slate-500">{getOwnerDisplayName(profile)}{profile?.contactNumber ? ` · ${profile.contactNumber}` : ""}</p>{profile?.email && <p className="text-xs text-slate-500">{profile.email}</p>}</div><div className="text-right"><p className="text-sm font-bold text-slate-500">{transaction.invoiceNumber || `INV-${transaction.id.slice(-6).toUpperCase()}`}</p><p className="mt-2 text-xs text-slate-500">Date: {transaction.date}</p></div></div>
-    <div className="mb-8 grid gap-5 sm:grid-cols-2"><div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Bill to</p><p className="mt-2 font-bold">{transaction.party}</p>{transaction.customerContactNumber && <p className="text-xs text-slate-500">{transaction.customerContactNumber}</p>}{transaction.customerCode && <p className="text-xs text-slate-500">Customer code: {transaction.customerCode}</p>}</div><div className="sm:text-right"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Payment status</p><p className="mt-2 font-bold">{(transaction.amountDue ?? transaction.outstandingAmount ?? 0) > 0 ? "Partially paid / due" : "Paid"}</p><p className="text-xs text-slate-500">Amount due: {formatCurrency(transaction.amountDue ?? transaction.outstandingAmount ?? 0)}</p></div></div>
-    <table className="w-full border-collapse text-left text-sm"><thead><tr className="border-b border-slate-200 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500"><th className="py-3">Description</th><th className="py-3 text-right">Qty</th><th className="py-3 text-right">Unit price</th><th className="py-3 text-right">Amount</th></tr></thead><tbody>{items.length ? items.map((item) => <tr key={item.productId} className="border-b border-slate-100"><td className="py-4"><p className="font-bold">{item.name}</p><p className="text-xs text-slate-500">{item.sku}{item.color ? ` · ${item.color}` : ""}</p></td><td className="py-4 text-right">{item.quantity}</td><td className="py-4 text-right">{formatCurrency(item.unitSellingPrice)}</td><td className="py-4 text-right font-bold">{formatCurrency(item.amount)}</td></tr>) : <tr><td className="py-5" colSpan={4}>{transaction.name}</td></tr>}</tbody></table>
-    <div className="mt-8 ml-auto max-w-[280px] space-y-3 border-t border-slate-200 pt-5 text-sm"><div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="font-bold">{formatCurrency(transaction.amount)}</span></div>{transaction.tradeInCredit ? <div className="flex justify-between"><span className="text-slate-500">Trade-in credit</span><span className="font-bold">-{formatCurrency(transaction.tradeInCredit)}</span></div> : null}<div className="flex justify-between border-t border-slate-200 pt-3 text-base"><span className="font-black">Total</span><span className="font-black">{formatCurrency(transaction.amountDue ?? transaction.amount)}</span></div></div>
-    <p className="mt-12 text-center text-xs text-slate-400">Thank you for your business.</p>
+export function InvoiceDocument({ model, profile }: { model: InvoiceDocumentModel; profile: BusinessProfile | null }) {
+  return <article className="invoice-print-root">
+    <header className="invoice-document-header">
+      <div className="invoice-brand-lockup">
+        <ZhkBrandMark />
+        <div><h2>ZHK MOBILES</h2><p>MOBILES&nbsp;&nbsp;|&nbsp;&nbsp;ACCESSORIES&nbsp;&nbsp;|&nbsp;&nbsp;GADGETS</p>{profile?.contactNumber && <small>{profile.contactNumber}</small>}</div>
+      </div>
+      <div className="invoice-heading-meta"><h1>INVOICE</h1><strong>{model.invoiceNumber}</strong><span>Date: {model.date}</span></div>
+    </header>
+
+    <div className="invoice-accent-line" aria-hidden="true"><span /></div>
+
+    <section className="invoice-parties">
+      <div><p className="invoice-label">{model.partyLabel}</p><strong>{model.party}</strong>{model.contact && <span>{model.contact}</span>}</div>
+      <div className="invoice-kind-chip">{model.kind === "sale" ? "Customer invoice" : model.kind === "purchase" ? "Supplier invoice" : "Expense record"}</div>
+    </section>
+
+    <table className="invoice-items-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Discount</th><th>Amount</th></tr></thead><tbody>{model.lines.map((line, index) => <tr key={`${line.name}-${index}`}><td><strong>{line.name}</strong>{line.detail && <small>{line.detail}</small>}</td><td>{line.quantity}</td><td>{formatCurrency(line.unitPrice)}</td><td>{formatCurrency(line.discount)}</td><td><strong>{formatCurrency(line.amount)}</strong></td></tr>)}</tbody></table>
+
+    <section className="invoice-summary"><div className="invoice-summary-box">{model.adjustments.map((adjustment) => <div key={adjustment.label}><span>{adjustment.label}</span><strong>{adjustment.negative ? "-" : ""}{formatCurrency(adjustment.amount)}</strong></div>)}<div className="invoice-total"><span>Total</span><strong>{formatCurrency(model.total)}</strong></div></div></section>
+
+    <section className="invoice-payment-row"><span className="invoice-payment-icon" aria-hidden="true">▣</span><div><span>Payment</span><strong>{model.paymentSummary}</strong></div></section>
+    {model.note && <p className="invoice-note">{model.note}</p>}
+    <footer className="invoice-document-footer">Solexa by Intellisense.cloud</footer>
   </article>;
+}
+
+function ZhkBrandMark() {
+  return <span className="zhk-brand-mark" aria-hidden="true"><i className="zhk-brand-swoosh zhk-brand-swoosh-blue" /><i className="zhk-brand-swoosh zhk-brand-swoosh-red" /><b>ZHK</b></span>;
 }
