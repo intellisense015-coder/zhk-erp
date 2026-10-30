@@ -43,8 +43,8 @@ export default function InventoryPage() {
 
   const openAddModal = () => { setProductError(null); setEditingProduct(null); setProductModalOpen(true); };
   const openEditModal = (product: Product) => { setProductError(null); setEditingProduct(product); setProductModalOpen(true); };
-  const saveProduct = (values: ProductFormValues) => {
-    const result = editingProduct ? updateProduct(editingProduct.id, values) : addProduct(values);
+  const saveProduct = async (values: ProductFormValues) => {
+    const result = await (editingProduct ? updateProduct(editingProduct.id, values) : addProduct(values));
     if (!result.ok) { setProductError(result.message); return result; }
     setProductError(null);
     setProductModalOpen(false);
@@ -65,7 +65,7 @@ export default function InventoryPage() {
     <Modal open={Boolean(kpi)} title={kpi === "stock" ? "Stock valuation" : kpi === "units" ? "Catalog volume" : kpi === "profit" ? "Potential profit" : "Low stock alerts"} description="Inventory KPI details." onClose={() => setKpi(null)}><div className="grid gap-3 p-5">{kpi === "stock" && records.map((product) => <InfoRow key={product.id} label={`${product.name} · ${product.color || "Unspecified"}`} value={formatCurrency(product.inStockQuantity * product.costPrice)} />)}{kpi === "units" && <><InfoRow label="Units on hand" value={String(units)} /><InfoRow label="Active SKUs" value={String(records.length)} /></>}{kpi === "profit" && <InfoRow label="Estimated gross profit" value={formatCurrency(potentialProfit)} tone={potentialProfit >= 0 ? "success" : "error"} />}{kpi === "low" && records.filter((product) => product.inStockQuantity <= product.reorderLevel).map((product) => <InfoRow key={product.id} label={`${product.name} · ${product.color || "Unspecified"}`} value={`${product.inStockQuantity} units`} tone="error" />)}</div></Modal>
     <Modal open={Boolean(detailProduct)} title={detailProduct ? `${productLabel(detailProduct)} details` : "Product details"} description={detailProduct ? `${detailProduct.color || "Unspecified"} · ${detailProduct.sku}` : undefined} onClose={() => setDetailProduct(null)} className="product-details-modal-card">{detailProduct && <ProductDetails product={detailProduct} />}</Modal>
     <ProductFormModal key={`${productModalOpen ? "open" : "closed"}-${editingProduct?.id ?? "new"}`} open={productModalOpen} product={editingProduct} onClose={() => { setProductModalOpen(false); setEditingProduct(null); setProductError(null); }} onSubmit={saveProduct} serverError={productError} />
-    <ConfirmDialog open={Boolean(deleteTarget)} title="Delete product?" description={deleteTarget ? `${deleteTarget.name} will be removed from inventory.` : undefined} confirmLabel="Delete product" onClose={() => setDeleteTarget(null)} onConfirm={() => { if (deleteTarget) deleteProduct(deleteTarget.id); setDeleteTarget(null); }} />
+    <ConfirmDialog open={Boolean(deleteTarget)} title="Delete product?" description={deleteTarget ? `${deleteTarget.name} will be removed from inventory.` : undefined} confirmLabel="Delete product" onClose={() => setDeleteTarget(null)} onConfirm={async () => { if (deleteTarget) { const result = await deleteProduct(deleteTarget.id); if (!result.ok) setProductError(result.message); else setProductError(null); } setDeleteTarget(null); }} />
   </div>;
 }
 

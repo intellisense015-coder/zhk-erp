@@ -65,7 +65,7 @@ function BrandOption({ brand }: { brand: (typeof productBrands)[number] }) {
   return <span className="product-brand-option"><span className={`product-brand-logo ${hasLogo ? "" : "product-brand-fallback"}`}>{hasLogo ? <img src={logoUrl} alt={`${brand.label} logo`} aria-hidden="true" onError={() => setLogoIndex((current) => current + 1)} /> : brand.mark}</span><span>{brand.label}</span></span>;
 }
 
-type ProductFormModalProps = { open: boolean; product?: Product | null; onClose: () => void; onSubmit: (values: ProductFormValues) => { ok: true } | { ok: false; message: string } | void; serverError?: string | null };
+type ProductFormModalProps = { open: boolean; product?: Product | null; onClose: () => void; onSubmit: (values: ProductFormValues) => { ok: true } | { ok: false; message: string } | void | Promise<{ ok: true } | { ok: false; message: string } | void>; serverError?: string | null };
 
 export function ProductFormModal({ open, product, onClose, onSubmit, serverError }: ProductFormModalProps) {
   const { suppliers, hydrated } = useErpStore();
@@ -149,14 +149,14 @@ export function ProductFormModal({ open, product, onClose, onSubmit, serverError
   }, [categoryValue, modelValue, open, selectedBrand.label, setValue]);
 
   const editing = Boolean(product);
-  const submit = (values: ProductFormValues) => {
+  const submit = async (values: ProductFormValues) => {
     setFormError(null);
     if (showNewVendor && !values.vendorContactNumber.trim()) {
       setVendorError("A unique supplier contact number is required for a new supplier.");
       return;
     }
     setVendorError(null);
-    onSubmit(values);
+    await onSubmit(values);
   };
   const handleInvalid = (formErrors: FieldErrors<ProductFormValues>) => {
     const firstMessage = Object.values(formErrors).map((error) => error?.message).find((message): message is string => typeof message === "string" && message !== "Supplier is required");

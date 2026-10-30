@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { defaultExpenseCategories, getCapitalSummary, productBrands, type CapitalAccount, type CapitalEntry, type Customer, type Expense, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from "./erp-data";
 import { createInvoiceNumber } from "./invoice-utils";
 import type { ExchangeFormValues, ProductFormValues, PurchaseFormValues, SaleFormValues } from "./validations";
@@ -14,11 +14,12 @@ import { isSupabaseConfigured } from "./supabase/config";
 const STORAGE_KEY = "solexa-erp-data-v2";
 type StoreData = { products: Product[]; transactions: Transaction[]; customers: Customer[]; suppliers: Supplier[]; supplierPayments: SupplierPayment[]; expenses: Expense[]; expenseCategories: string[]; capitalAccounts: CapitalAccount[]; capitalEntries: CapitalEntry[] };
 type ExpenseFormValues = Omit<Expense, "id" | "date" | "month" | "createdAt">;
+type StoreResult = { ok: true } | { ok: false; message: string };
 type StoreContextValue = StoreData & {
   hydrated: boolean;
-  addProduct: (values: ProductFormValues) => { ok: true } | { ok: false; message: string };
-  updateProduct: (id: string, values: ProductFormValues) => { ok: true } | { ok: false; message: string };
-  deleteProduct: (id: string) => void;
+  addProduct: (values: ProductFormValues) => Promise<StoreResult>;
+  updateProduct: (id: string, values: ProductFormValues) => Promise<StoreResult>;
+  deleteProduct: (id: string) => Promise<StoreResult>;
   addCustomer: (values: { name: string; contactNumber: string; gender?: string; cnicNumber?: string }) => { ok: true; customer: Customer } | { ok: false; message: string };
   updateCustomer: (id: string, values: { name: string; contactNumber: string; gender?: string; cnicNumber?: string }) => { ok: true } | { ok: false; message: string };
   deleteCustomer: (id: string) => void;
@@ -52,6 +53,11 @@ function hasStoredRecords(store: StoreData) {
     || store.expenses.length > 0
     || store.capitalAccounts.length > 0
     || store.capitalEntries.length > 0;
+}
+
+function readableRpcError(message: string, fallback: string) {
+  const cleaned = message.replace(/^.*?ERROR:\s*/i, "").trim();
+  return cleaned.length > 0 && cleaned.length <= 180 ? cleaned : fallback;
 }
 
 function makeId(prefix: string) {
@@ -174,10 +180,22 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     }
   })() : "";
 
+  const refreshRemoteStore = useCallback(async (): Promise<StoreResult> => {
+    if (!isSupabaseConfigured()) return { ok: true };
+    const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+    const supabase = createSupabaseBrowserClient();
+    if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+    const remote = await loadSupabaseStoreData(supabase, workspaceId);
+    if (!remote.data) return { ok: false, message: "The workspace was saved, but inventory could not be refreshed." };
+    setData(remote.data);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remote.data));
+    return { ok: true };
+  }, []);
+
   const value = useMemo<StoreContextValue>(() => ({
     ...data,
     hydrated,
-    addProduct: (values) => {
+    addProduct: async (values) => {
       const brand = values.brand.trim();
       const model = values.model.trim();
       const color = values.color.trim();
@@ -194,6 +212,34 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (!existingSupplier && data.suppliers.some((supplier) => supplier.contactNumber === vendorContact)) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
       if (!existingSupplier && data.customers.some((customer) => customer.contactNumber === vendorContact)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
       const supplier = existingSupplier ?? { id: makeId("supplier"), name: vendorName, contactNumber: vendorContact, company: vendorCompany, createdAt: new Date().toISOString() };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("create_product", {
+          target_workspace_id: workspaceId,
+          product_payload: {
+            name,
+            sku,
+            brand,
+            model,
+            color,
+            description: values.description ?? "",
+            image_url: values.imageUrl ?? "",
+            image_source: values.imageSource ?? null,
+            category: values.category,
+            cost_price: values.costPrice,
+            selling_price: values.sellingPrice,
+            in_stock_quantity: values.inStockQuantity,
+            reorder_level: values.reorderLevel,
+            vendor_name: supplier.name,
+            vendor_contact_number: supplier.contactNumber,
+            vendor_company: supplier.company,
+          },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not save this product.") };
+        return refreshRemoteStore();
+      }
       const productId = makeId("product");
       const product = { ...values, name, sku, brand, model, color, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company, id: productId, sold: 0, received: values.inStockQuantity };
       const createdAt = new Date().toISOString();
@@ -203,7 +249,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ ...data, products: [...data.products, product], transactions: purchaseTransaction ? [purchaseTransaction, ...data.transactions] : data.transactions, suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
       return { ok: true };
     },
-    updateProduct: (id, values) => {
+    updateProduct: async (id, values) => {
       const brand = values.brand.trim();
       const model = values.model.trim();
       const color = values.color.trim();
@@ -221,6 +267,36 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (!existingSupplier && data.customers.some((customer) => customer.contactNumber === vendorContact)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
       const supplier = existingSupplier ?? { id: makeId("supplier"), name: vendorName, contactNumber: vendorContact, company: vendorCompany, createdAt: new Date().toISOString() };
       const existingProduct = data.products.find((product) => product.id === id);
+      if (!existingProduct) return { ok: false, message: "This product no longer exists." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("update_product", {
+          target_workspace_id: workspaceId,
+          target_product_id: id,
+          product_payload: {
+            name,
+            sku,
+            brand,
+            model,
+            color,
+            description: values.description ?? "",
+            image_url: values.imageUrl ?? "",
+            image_source: values.imageSource ?? null,
+            category: values.category,
+            cost_price: values.costPrice,
+            selling_price: values.sellingPrice,
+            in_stock_quantity: values.inStockQuantity,
+            reorder_level: values.reorderLevel,
+            vendor_name: supplier.name,
+            vendor_contact_number: supplier.contactNumber,
+            vendor_company: supplier.company,
+          },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this product.") };
+        return refreshRemoteStore();
+      }
       const stockIncrease = Math.max(values.inStockQuantity - (existingProduct?.inStockQuantity ?? 0), 0);
       const createdAt = new Date().toISOString();
       const { date, month } = getDateParts();
@@ -229,8 +305,17 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ ...data, products: data.products.map((product) => product.id === id ? { ...product, ...values, name, sku, brand, model, color, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company } : product), transactions: purchaseTransaction ? [purchaseTransaction, ...data.transactions] : data.transactions, suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
       return { ok: true };
     },
-    deleteProduct: (id) => {
+    deleteProduct: async (id) => {
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("delete_product", { target_workspace_id: workspaceId, target_product_id: id });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not delete this product.") };
+        return refreshRemoteStore();
+      }
       commit({ ...data, products: data.products.filter((product) => product.id !== id) });
+      return { ok: true };
     },
     addCustomer: (values) => {
       const name = values.name.trim();
@@ -523,7 +608,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ products: nextProducts, transactions: data.transactions.map((transaction) => transaction.id === id ? updatedSale : transaction), customers: data.customers.map((customer) => customer.id === sale.customerId ? { ...customer, name: values.customerName.trim() } : customer), suppliers: data.suppliers, supplierPayments: data.supplierPayments, expenses: data.expenses, expenseCategories: data.expenseCategories, capitalAccounts: data.capitalAccounts, capitalEntries: data.capitalEntries });
       return { ok: true };
     },
-  }), [data, hydrated]);
+  }), [data, hydrated, refreshRemoteStore]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
