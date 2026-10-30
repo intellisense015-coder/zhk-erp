@@ -206,6 +206,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const vendorName = values.vendorName.trim();
       const vendorContact = normalizeContact(values.vendorContactNumber);
       const vendorCompany = values.vendorCompany?.trim() ?? "";
+      const imageSource: Product["imageSource"] = values.imageSource === "catalog" ? "catalog" : undefined;
       const existingSupplier = data.suppliers.find((supplier) => normalizeName(supplier.name) === normalizeName(vendorName));
       if (!existingSupplier && !vendorContact) return { ok: false, message: "A contact number is required for a new supplier." };
       if (!existingSupplier && ownerContact && ownerContact === vendorContact) return { ok: false, message: "The business owner's number cannot be used as a supplier contact." };
@@ -241,7 +242,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         return refreshRemoteStore();
       }
       const productId = makeId("product");
-      const product = { ...values, name, sku, brand, model, color, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company, id: productId, sold: 0, received: values.inStockQuantity };
+      const product = { ...values, name, sku, brand, model, color, imageSource, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company, id: productId, sold: 0, received: values.inStockQuantity };
       const createdAt = new Date().toISOString();
       const { date, month } = getDateParts();
       const total = values.inStockQuantity * values.costPrice;
@@ -260,6 +261,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const vendorName = values.vendorName.trim();
       const vendorContact = normalizeContact(values.vendorContactNumber);
       const vendorCompany = values.vendorCompany?.trim() ?? "";
+      const imageSource: Product["imageSource"] = values.imageSource === "catalog" ? "catalog" : undefined;
       const existingSupplier = data.suppliers.find((supplier) => normalizeName(supplier.name) === normalizeName(vendorName));
       if (!existingSupplier && !vendorContact) return { ok: false, message: "A contact number is required for a new supplier." };
       if (!existingSupplier && ownerContact && ownerContact === vendorContact) return { ok: false, message: "The business owner's number cannot be used as a supplier contact." };
@@ -302,7 +304,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const { date, month } = getDateParts();
       const total = stockIncrease * values.costPrice;
       const purchaseTransaction: Transaction | null = stockIncrease > 0 ? { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), source: "supplier", name, productId: id, unitCost: values.costPrice, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: stockIncrease, amount: total, paidAmount: 0, outstandingAmount: total, time: "Just now", createdAt, date, month } : null;
-      commit({ ...data, products: data.products.map((product) => product.id === id ? { ...product, ...values, name, sku, brand, model, color, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company } : product), transactions: purchaseTransaction ? [purchaseTransaction, ...data.transactions] : data.transactions, suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
+      commit({ ...data, products: data.products.map((product) => product.id === id ? { ...product, ...values, name, sku, brand, model, color, imageSource, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company } : product), transactions: purchaseTransaction ? [purchaseTransaction, ...data.transactions] : data.transactions, suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
       return { ok: true };
     },
     deleteProduct: async (id) => {

@@ -13,7 +13,9 @@ export const productSchema = z.object({
   color: requiredText("Color"),
   description: z.string().trim().max(500, "Description must be 500 characters or less").optional(),
   imageUrl: z.string().trim().url("Enter a valid image URL").optional().or(z.literal("")),
-  imageSource: z.literal("catalog").optional(),
+  // Hidden form inputs serialize an unset optional value as "". Keep that
+  // empty value valid; the database payload already normalizes it to null.
+  imageSource: z.literal("catalog").or(z.literal("")).optional(),
   category: requiredText("Category"),
   vendorName: requiredText("Supplier"),
   vendorContactNumber: z.string().trim().refine((value) => !value || /^[+()\d\s-]{7,}$/.test(value), "Enter a valid supplier contact number"),
