@@ -33,8 +33,8 @@ type StoreContextValue = StoreData & {
   addSupplierPayment: (values: { supplierId: string; amount: number; note?: string; capitalId?: string }) => { ok: true } | { ok: false; message: string };
   addExpense: (values: ExpenseFormValues) => Promise<StoreResult>;
   addExpenseCategory: (name: string) => Promise<StoreResult>;
-  updateExpense: (id: string, values: ExpenseFormValues) => { ok: true } | { ok: false; message: string };
-  deleteExpense: (id: string) => void;
+  updateExpense: (id: string, values: ExpenseFormValues) => Promise<StoreResult>;
+  deleteExpense: (id: string) => Promise<StoreResult>;
   addCapitalAccount: (values: { name: string; ownerName?: string; amount: number; note?: string }) => { ok: true } | { ok: false; message: string };
   addCapitalEntry: (values: { capitalId: string; type: "contribution" | "withdrawal"; amount: number; note?: string }) => { ok: true } | { ok: false; message: string };
   addTransfer: (values: { transferKind: "supplier-to-customer" | "customer-to-customer"; fromEntity: string; toEntity: string; productId: string; quantity: number; amount: number }) => { ok: true } | { ok: false; message: string };
@@ -476,15 +476,44 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ ...data, expenseCategories: [...data.expenseCategories, category] });
       return { ok: true };
     },
-    updateExpense: (id, values) => {
+    updateExpense: async (id, values) => {
       const existing = data.expenses.find((expense) => expense.id === id);
       if (!existing) return { ok: false, message: "Expense record not found." };
       const description = values.description.trim();
       if (!description || !values.category.trim() || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Category, description, and an amount greater than zero are required." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("update_expense", {
+          target_workspace_id: workspaceId,
+          target_expense_id: id,
+          expense_payload: {
+            category: values.category,
+            description,
+            amount: values.amount,
+            payment_method: values.paymentMethod ?? null,
+            note: values.note?.trim() || null,
+          },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this expense.") };
+        return refreshRemoteStore();
+      }
       commit({ ...data, expenses: data.expenses.map((expense) => expense.id === id ? { id: expense.id, invoiceNumber: expense.invoiceNumber, category: values.category.trim(), description, amount: values.amount, date: expense.date, month: expense.month, paymentMethod: values.paymentMethod, note: values.note, createdAt: expense.createdAt } : expense) });
       return { ok: true };
     },
-    deleteExpense: (id) => commit({ ...data, expenses: data.expenses.filter((expense) => expense.id !== id) }),
+    deleteExpense: async (id) => {
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("delete_expense", { target_workspace_id: workspaceId, target_expense_id: id });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not delete this expense.") };
+        return refreshRemoteStore();
+      }
+      commit({ ...data, expenses: data.expenses.filter((expense) => expense.id !== id) });
+      return { ok: true };
+    },
     addCapitalAccount: (values) => {
       const name = values.name.trim();
       if (!name || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Enter a capital name and an opening amount greater than zero." };
