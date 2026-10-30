@@ -17,6 +17,9 @@ export type RemoteStoreData = {
 }
 
 type DbRow = Record<string, unknown>
+type WorkspaceRowsResult = { data: DbRow[] | null; error?: string }
+const READ_PAGE_SIZE = 500
+const READ_MAX_PAGES = 100
 
 function text(value: unknown, fallback = '') {
   return typeof value === 'string' ? value : fallback
@@ -48,6 +51,32 @@ function month(value: string) {
 
 function rows(value: unknown): DbRow[] {
   return Array.isArray(value) ? value.filter((item): item is DbRow => Boolean(item && typeof item === 'object')) : []
+}
+
+async function fetchWorkspaceRows(
+  supabase: SupabaseClient,
+  table: string,
+  selection: string,
+  workspaceId: string,
+  orderColumn?: string,
+  ascending = false,
+): Promise<WorkspaceRowsResult> {
+  const collected: DbRow[] = []
+  for (let page = 0; page < READ_MAX_PAGES; page += 1) {
+    const query = supabase
+      .from(table)
+      .select(selection)
+      .eq('workspace_id', workspaceId)
+      .range(page * READ_PAGE_SIZE, (page + 1) * READ_PAGE_SIZE - 1)
+    const result = orderColumn
+      ? await query.order(orderColumn, { ascending })
+      : await query
+    if (result.error) return { data: null, error: result.error.message }
+    const batch = rows(result.data)
+    collected.push(...batch)
+    if (batch.length < READ_PAGE_SIZE) return { data: collected }
+  }
+  return { data: null, error: `The ${table} dataset exceeds the safe read limit.` }
 }
 
 function mapProduct(row: DbRow): Product {
@@ -156,20 +185,20 @@ function mapTransaction(row: DbRow, saleItemsByTransaction: Map<string, SaleLine
 
 export async function loadSupabaseStoreData(supabase: SupabaseClient, workspaceId: string): Promise<{ data: RemoteStoreData | null; error?: string }> {
   const results = await Promise.all([
-    supabase.from('products').select('*').eq('workspace_id', workspaceId),
-    supabase.from('customers').select('*').eq('workspace_id', workspaceId),
-    supabase.from('suppliers').select('*').eq('workspace_id', workspaceId),
-    supabase.from('transactions').select('*').eq('workspace_id', workspaceId).order('occurred_on', { ascending: false }),
-    supabase.from('sale_items').select('*').eq('workspace_id', workspaceId),
-    supabase.from('supplier_payments').select('*').eq('workspace_id', workspaceId).order('occurred_on', { ascending: false }),
-    supabase.from('expenses').select('*').eq('workspace_id', workspaceId).order('occurred_on', { ascending: false }),
-    supabase.from('expense_categories').select('name').eq('workspace_id', workspaceId).order('name'),
-    supabase.from('capital_accounts').select('*').eq('workspace_id', workspaceId).order('created_at'),
-    supabase.from('capital_entries').select('*').eq('workspace_id', workspaceId).order('occurred_on', { ascending: false }),
+    fetchWorkspaceRows(supabase, 'products', '*', workspaceId, 'created_at'),
+    fetchWorkspaceRows(supabase, 'customers', '*', workspaceId, 'created_at'),
+    fetchWorkspaceRows(supabase, 'suppliers', '*', workspaceId, 'created_at'),
+    fetchWorkspaceRows(supabase, 'transactions', '*', workspaceId, 'occurred_on'),
+    fetchWorkspaceRows(supabase, 'sale_items', '*', workspaceId, 'id'),
+    fetchWorkspaceRows(supabase, 'supplier_payments', '*', workspaceId, 'occurred_on'),
+    fetchWorkspaceRows(supabase, 'expenses', '*', workspaceId, 'occurred_on'),
+    fetchWorkspaceRows(supabase, 'expense_categories', 'name', workspaceId, 'name', true),
+    fetchWorkspaceRows(supabase, 'capital_accounts', '*', workspaceId, 'created_at', true),
+    fetchWorkspaceRows(supabase, 'capital_entries', '*', workspaceId, 'occurred_on'),
   ])
 
   const failed = results.find((result) => result.error)
-  if (failed?.error) return { data: null, error: failed.error.message }
+  if (failed?.error) return { data: null, error: failed.error }
 
   const [products, customers, suppliers, transactions, saleItems, supplierPayments, expenses, expenseCategories, capitalAccounts, capitalEntries] = results
   const saleItemsByTransaction = new Map<string, SaleLineItem[]>()

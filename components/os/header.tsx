@@ -127,9 +127,12 @@ export function OsHeader({
   }, []);
 
   useEffect(() => {
-    const storedTheme = window.localStorage.getItem("solexa-theme");
-    const dark = storedTheme === "dark" || document.documentElement.classList.contains("dark") || document.documentElement.getAttribute("data-theme") === "dark";
-    setIsDarkMode(dark);
+    const timer = window.setTimeout(() => {
+      const storedTheme = window.localStorage.getItem("solexa-theme");
+      const dark = storedTheme === "dark" || document.documentElement.classList.contains("dark") || document.documentElement.getAttribute("data-theme") === "dark";
+      setIsDarkMode(dark);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {

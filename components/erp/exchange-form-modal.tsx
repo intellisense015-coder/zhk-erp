@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeftRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../primitives/button";
 import { Field, Modal, SelectField } from "../primitives/primitives";
 import { formatCurrency, type Product } from "../../lib/erp-data";
@@ -53,18 +53,18 @@ export function ExchangeFormModal({ open, onClose }: { open: boolean; onClose: (
   const { products, customers, suppliers, addExchange } = useErpStore();
   const [draft, setDraft] = useState<ExchangeDraft>(() => buildDraft(products, customers));
   const [error, setError] = useState<string | null>(null);
-  const givenProduct = useMemo(() => products.find((product) => product.id === draft.givenProductId), [products, draft.givenProductId]);
-  const receivedProduct = useMemo(() => products.find((product) => product.id === draft.receivedProductId), [products, draft.receivedProductId]);
   const tradeInTotal = (Number(draft.givenQuantity) || 0) * (Number(draft.tradeInUnitValue) || 0);
   const saleTotal = (Number(draft.receivedQuantity) || 0) * (Number(draft.receivedUnitSellingPrice) || 0);
   const amountDue = saleTotal - tradeInTotal;
   const isBuyback = draft.mode === "buyback";
 
   useEffect(() => {
-    if (open) {
+    if (!open) return undefined;
+    const timer = window.setTimeout(() => {
       setDraft(buildDraft(products, customers));
       setError(null);
-    }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [open, products, customers]);
 
   const update = <K extends keyof ExchangeDraft>(key: K, value: ExchangeDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));

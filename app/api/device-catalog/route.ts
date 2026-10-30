@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { consumeRateLimit } from "../../../lib/security/rate-limit";
 
 const MOBILE_API_BASE = "https://api.mobileapi.dev";
 
@@ -23,6 +24,24 @@ type UpstreamDevice = {
 };
 
 type CatalogResponse = { devices?: UpstreamDevice[]; results?: UpstreamDevice[]; total_pages?: number; total?: number; page_size?: number };
+const allowedCategories = new Set<CatalogCategory>(["Mobiles", "Tablets", "Smartwatches", "Accessories"]);
+const queryLimits = { manufacturer: 80, category: 24, model: 120 } as const;
+
+function validQuery(value: string | null, maxLength: number) {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return trimmed && trimmed.length <= maxLength && !/[\u0000-\u001f\u007f]/.test(trimmed) ? trimmed : null;
+}
+
+function clientAddress(request: NextRequest) {
+  return request.headers.get("x-real-ip")?.trim()
+    || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || "unknown";
+}
+
+function json(payload: Record<string, unknown>, status = 200, headers?: Record<string, string>) {
+  return Response.json(payload, { status, headers: { "Cache-Control": "private, max-age=300", ...headers } });
+}
 
 function categoryFor(type: string): CatalogCategory {
   if (type.includes("tablet")) return "Tablets";
@@ -89,21 +108,25 @@ async function fetchDeviceImages(deviceId: string, apiKey: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const manufacturer = request.nextUrl.searchParams.get("manufacturer")?.trim();
-  const category = request.nextUrl.searchParams.get("category")?.trim();
-  const model = request.nextUrl.searchParams.get("model")?.trim();
+  const manufacturer = validQuery(request.nextUrl.searchParams.get("manufacturer"), queryLimits.manufacturer);
+  const category = validQuery(request.nextUrl.searchParams.get("category"), queryLimits.category);
+  const model = validQuery(request.nextUrl.searchParams.get("model"), queryLimits.model);
   const apiKey = process.env.MOBILEAPI_API_KEY;
 
-  if (!manufacturer) return Response.json({ configured: Boolean(apiKey), devices: [], message: "A manufacturer is required." }, { status: 400 });
-  if (!apiKey) return Response.json({ configured: false, devices: [], message: "The remote device catalog is not configured." }, { status: 503 });
+  const rate = consumeRateLimit(`device-catalog:${clientAddress(request)}`, 30, 60_000);
+  if (!rate.allowed) return json({ configured: Boolean(apiKey), devices: [], message: "Too many catalog requests. Please try again shortly." }, 429, { "Retry-After": String(rate.retryAfter) });
+  if (manufacturer === null || category === null || model === null) return json({ configured: Boolean(apiKey), devices: [], message: "Catalog query is invalid or too long." }, 400);
+  if (!manufacturer) return json({ configured: Boolean(apiKey), devices: [], message: "A manufacturer is required." }, 400);
+  if (category && !allowedCategories.has(category as CatalogCategory)) return json({ configured: Boolean(apiKey), devices: [], message: "Catalog category is invalid." }, 400);
+  if (!apiKey) return json({ configured: false, devices: [], message: "The remote device catalog is not configured." }, 503);
 
   try {
     if (model) {
       const exactDevice = await fetchExactModel(manufacturer, model, apiKey);
-      if (!exactDevice) return Response.json({ configured: true, devices: [] });
+      if (!exactDevice) return json({ configured: true, devices: [] });
       const normalized = normalizeDevice(exactDevice);
       const imageUrl = normalized.imageUrl ?? await fetchDeviceImages(normalized.id, apiKey);
-      return Response.json({ configured: true, devices: [{ ...normalized, imageUrl }] });
+      return json({ configured: true, devices: [{ ...normalized, imageUrl }] });
     }
 
     const firstPage = await fetchManufacturerPage(manufacturer, 1, apiKey);
@@ -111,8 +134,8 @@ export async function GET(request: NextRequest) {
     const remainingPages = await Promise.all(Array.from({ length: totalPages - 1 }, (_, index) => fetchManufacturerPage(manufacturer, index + 2, apiKey)));
     const devices = [firstPage, ...remainingPages].flatMap((page) => page.devices ?? []).map(normalizeDevice).filter((device) => device.name && (!category || device.category === category));
     const uniqueDevices = Array.from(new Map(devices.map((device) => [`${device.brand}:${device.name}`.toLowerCase(), device])).values());
-    return Response.json({ configured: true, devices: uniqueDevices });
+    return json({ configured: true, devices: uniqueDevices });
   } catch {
-    return Response.json({ configured: true, devices: [], message: "The remote device catalog is temporarily unavailable." }, { status: 502 });
+    return json({ configured: true, devices: [], message: "The remote device catalog is temporarily unavailable." }, 502);
   }
 }

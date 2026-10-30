@@ -9,11 +9,18 @@ gates below pass.
 - `.env` is ignored by Git and is not tracked.
 - The application source contains no service-role key reference.
 - The publishable key is the only key permitted in `NEXT_PUBLIC_*` variables.
-- The current login and six-digit PIN screens are local UI flows, not real
-  authentication. They must not be treated as authorization for database data.
+- Supabase Auth establishes the session used for database access. The six-digit
+  PIN is an additional local UI gate only; it is not treated as authorization.
 - The initial migration enables RLS and allows direct member reads only. Direct
   table writes are intentionally withheld until authenticated server/RPC
   mutations are implemented.
+- Explicit grants now deny anonymous table access and deny direct authenticated
+  table writes. Approved security-definer RPCs are the mutation boundary.
+- The device-catalog route is protected by the central proxy, validates query
+  lengths/categories, applies a bounded per-instance request limiter, and
+  never returns the upstream API key.
+- Supabase reads are paginated in bounded batches and fail closed if a dataset
+  exceeds the configured safety limit.
 
 ## Required controls
 
@@ -45,3 +52,13 @@ gates below pass.
   range.
 - Password reset, session expiry, logout, and revoked membership are enforced.
 - No build artifact or browser request contains a service-role credential.
+
+## Current production blockers
+
+- The in-process device-catalog limiter is defense-in-depth only. Before a
+  multi-instance production launch, replace it with a shared provider such as
+  Vercel WAF or Upstash Redis and test limits across instances.
+- Sales, expenses, supplier/customer mutations, capital, exchanges, and
+  transfers still need secure RPCs before those workflows are production-ready.
+- Business profile/settings persistence and local-data import still need a
+  server-side data-access path.

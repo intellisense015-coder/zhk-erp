@@ -1,9 +1,9 @@
 # Supabase integration
 
-This directory is the home for the versioned Supabase database migrations and
-seed data. No schema or application data has been moved yet.
+This directory contains the versioned database schema, RLS policies, security
+definer RPCs, and migration history for Solexa.
 
-The first migration will be added after the existing local ERP data model is
-mapped to tables, relationships, constraints, RLS policies, and atomic stock
-movement functions. Until then, `lib/erp-store.tsx` remains the source of truth
-and the app continues to run in local-only mode.
+The current migration set provides authenticated workspace reads, secure product
+mutations, and an atomic purchase/stock-entry operation. Remaining ERP writes
+are intentionally staged and continue to use the local store until their secure
+RPCs, audit coverage, and end-to-end tests are complete.
