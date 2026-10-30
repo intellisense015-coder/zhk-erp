@@ -15,6 +15,9 @@ const nextConfig: NextConfig = {
       validationLevel: "manual-warning",
     },
   },
+  // The indicator is useful while developing Next routes, but it is not part
+  // of the Solexa UI and can obscure the lower-left controls during testing.
+  devIndicators: false,
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

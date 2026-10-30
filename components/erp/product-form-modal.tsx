@@ -229,13 +229,6 @@ export function ProductFormModal({ open, product, onClose, onSubmit, serverError
               {vendorNames.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}
           </SelectField>
 
-          {!showNewVendor && <button type="button" className="mt-1 h-10 self-end rounded-[12px] border border-[var(--border)] px-3 text-[10px] font-bold text-[var(--primary)] transition hover:border-[var(--primary)]" onClick={() => {
-            setValue("vendorName", "", { shouldDirty: true, shouldValidate: true });
-            setValue("vendorContactNumber", "", { shouldDirty: true, shouldValidate: true });
-            setValue("vendorCompany", "", { shouldDirty: true });
-            setVendorError(null);
-          }}>+ Add new supplier</button>}
-
           {showNewVendor ? <>
             <Field className="product-modal-compact-label" label="Full name" textOnly placeholder="e.g. Ahmed Khan" {...register("vendorName")} hint={errors.vendorName?.message === "Supplier is required" ? undefined : errors.vendorName?.message} />
             <Field className="product-modal-compact-label" label="Contact" type="tel" placeholder="e.g. 0300 1234567" {...register("vendorContactNumber")} hint={errors.vendorContactNumber?.message} />
