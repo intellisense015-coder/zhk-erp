@@ -41,12 +41,12 @@ export default function ExpensesPage() {
 
   const openCreate = () => { setEditing(null); setDraft(blankDraft); setNotification(null); setEditorOpen(true); };
   const openCategory = () => { setCategoryName(""); setNotification(null); setCategoryOpen(true); };
-  const submitCategory = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const result = addExpenseCategory(categoryName); if (!result.ok) { setNotification({ variant: "error", message: result.message }); return; } setCategoryOpen(false); setCategoryName(""); setNotification({ variant: "success", message: "Expense category added successfully." }); };
+  const submitCategory = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const result = await addExpenseCategory(categoryName); if (!result.ok) { setNotification({ variant: "error", message: result.message }); return; } setCategoryOpen(false); setCategoryName(""); setNotification({ variant: "success", message: "Expense category added successfully." }); };
   const openEdit = (expense: Expense) => { setEditing(expense); setDraft({ category: expense.category, description: expense.description, amount: String(expense.amount), paymentMethod: expense.paymentMethod ?? "Cash", note: expense.note ?? "" }); setNotification(null); setEditorOpen(true); };
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const values = { category: draft.category, description: draft.description, amount: Number(draft.amount), paymentMethod: draft.paymentMethod, note: draft.note };
-    const result = editing ? updateExpense(editing.id, values) : addExpense(values);
+    const result = editing ? updateExpense(editing.id, values) : await addExpense(values);
     if (!result.ok) { setNotification({ variant: "error", message: result.message }); return; }
     setEditorOpen(false);
     setNotification({ variant: "success", message: editing ? "Expense updated successfully." : "Expense added successfully." });

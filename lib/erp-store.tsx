@@ -31,8 +31,8 @@ type StoreContextValue = StoreData & {
   addSale: (values: SaleFormValues) => Promise<StoreResult>;
   addExchange: (values: ExchangeFormValues) => { ok: true } | { ok: false; message: string };
   addSupplierPayment: (values: { supplierId: string; amount: number; note?: string; capitalId?: string }) => { ok: true } | { ok: false; message: string };
-  addExpense: (values: ExpenseFormValues) => { ok: true } | { ok: false; message: string };
-  addExpenseCategory: (name: string) => { ok: true } | { ok: false; message: string };
+  addExpense: (values: ExpenseFormValues) => Promise<StoreResult>;
+  addExpenseCategory: (name: string) => Promise<StoreResult>;
   updateExpense: (id: string, values: ExpenseFormValues) => { ok: true } | { ok: false; message: string };
   deleteExpense: (id: string) => void;
   addCapitalAccount: (values: { name: string; ownerName?: string; amount: number; note?: string }) => { ok: true } | { ok: false; message: string };
@@ -433,18 +433,46 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ ...data, products: data.products.map((item) => item.id === product.id ? { ...item, inStockQuantity: item.inStockQuantity + quantityDelta, received: item.received + quantityDelta, costPrice: values.unitCost } : item), transactions: data.transactions.map((transaction) => transaction.id === id ? updated : transaction) });
       return { ok: true };
     },
-    addExpense: (values) => {
+    addExpense: async (values) => {
       const description = values.description.trim();
       if (!description || !values.category.trim() || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Category, description, and an amount greater than zero are required." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("record_expense", {
+          target_workspace_id: workspaceId,
+          expense_payload: {
+            category: values.category,
+            description,
+            amount: values.amount,
+            payment_method: values.paymentMethod ?? null,
+            note: values.note?.trim() || null,
+          },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this expense.") };
+        return refreshRemoteStore();
+      }
       const { date, month } = getDateParts();
       const expense: Expense = { ...values, id: makeId("expense"), invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), category: values.category.trim(), description, amount: values.amount, date, month, createdAt: new Date().toISOString() };
       commit({ ...data, expenses: [expense, ...data.expenses] });
       return { ok: true };
     },
-    addExpenseCategory: (name) => {
+    addExpenseCategory: async (name) => {
       const category = name.trim();
       if (!category) return { ok: false, message: "Enter a category name." };
       if (data.expenseCategories.some((item) => normalizeName(item) === normalizeName(category))) return { ok: false, message: "This expense category already exists." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("create_expense_category", {
+          target_workspace_id: workspaceId,
+          category_name: category,
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not add this expense category.") };
+        return refreshRemoteStore();
+      }
       commit({ ...data, expenseCategories: [...data.expenseCategories, category] });
       return { ok: true };
     },
