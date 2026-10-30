@@ -111,7 +111,7 @@ export default function SuppliersPage() {
     setPaymentError(null);
   };
 
-  const submitPayment = (event: FormEvent<HTMLFormElement>) => {
+  const submitPayment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!paymentTarget) return;
     const amount = Number(paymentAmount.replace(/,/g, ""));
@@ -123,7 +123,7 @@ export default function SuppliersPage() {
       setPaymentError("Payment cannot exceed the supplier's outstanding balance.");
       return;
     }
-    const result = addSupplierPayment({ supplierId: paymentTarget.id, amount, note: paymentNote, capitalId: paymentCapitalId || undefined });
+    const result = await addSupplierPayment({ supplierId: paymentTarget.id, amount, note: paymentNote, capitalId: paymentCapitalId || undefined });
     if (!result.ok) {
       setPaymentError(result.message);
       return;

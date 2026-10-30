@@ -30,13 +30,13 @@ type StoreContextValue = StoreData & {
   updatePurchase: (id: string, values: { quantity: number; unitCost: number }) => { ok: true } | { ok: false; message: string };
   addSale: (values: SaleFormValues) => Promise<StoreResult>;
   addExchange: (values: ExchangeFormValues) => { ok: true } | { ok: false; message: string };
-  addSupplierPayment: (values: { supplierId: string; amount: number; note?: string; capitalId?: string }) => { ok: true } | { ok: false; message: string };
+  addSupplierPayment: (values: { supplierId: string; amount: number; note?: string; capitalId?: string }) => Promise<StoreResult>;
   addExpense: (values: ExpenseFormValues) => Promise<StoreResult>;
   addExpenseCategory: (name: string) => Promise<StoreResult>;
   updateExpense: (id: string, values: ExpenseFormValues) => Promise<StoreResult>;
   deleteExpense: (id: string) => Promise<StoreResult>;
-  addCapitalAccount: (values: { name: string; ownerName?: string; amount: number; note?: string }) => { ok: true } | { ok: false; message: string };
-  addCapitalEntry: (values: { capitalId: string; type: "contribution" | "withdrawal"; amount: number; note?: string }) => { ok: true } | { ok: false; message: string };
+  addCapitalAccount: (values: { name: string; ownerName?: string; amount: number; note?: string }) => Promise<StoreResult>;
+  addCapitalEntry: (values: { capitalId: string; type: "contribution" | "withdrawal"; amount: number; note?: string }) => Promise<StoreResult>;
   addTransfer: (values: { transferKind: "supplier-to-customer" | "customer-to-customer"; fromEntity: string; toEntity: string; productId: string; quantity: number; amount: number }) => { ok: true } | { ok: false; message: string };
   updateSale: (id: string, values: { customerName: string; items: SaleLineItem[] }) => { ok: true } | { ok: false; message: string };
 };
@@ -578,20 +578,42 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ ...data, expenses: data.expenses.filter((expense) => expense.id !== id) });
       return { ok: true };
     },
-    addCapitalAccount: (values) => {
+    addCapitalAccount: async (values) => {
       const name = values.name.trim();
       if (!name || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Enter a capital name and an opening amount greater than zero." };
       if (data.capitalAccounts.some((account) => normalizeName(account.name) === normalizeName(name))) return { ok: false, message: "A capital account with this name already exists." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("create_capital_account", {
+          target_workspace_id: workspaceId,
+          capital_payload: { name, owner_name: values.ownerName?.trim() ?? "", amount: values.amount, note: values.note?.trim() || null },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not add this capital account.") };
+        return refreshRemoteStore();
+      }
       const { date, month } = getDateParts();
       const account: CapitalAccount = { id: makeId("capital"), name, ownerName: values.ownerName?.trim() ?? "", createdAt: new Date().toISOString() };
       const entry: CapitalEntry = { id: makeId("capital-entry"), capitalId: account.id, type: "contribution", amount: values.amount, date, month, note: values.note?.trim(), createdAt: new Date().toISOString() };
       commit({ ...data, capitalAccounts: [account, ...data.capitalAccounts], capitalEntries: [entry, ...data.capitalEntries] });
       return { ok: true };
     },
-    addCapitalEntry: (values) => {
+    addCapitalEntry: async (values) => {
       const account = data.capitalAccounts.find((item) => item.id === values.capitalId);
       if (!account || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Choose a capital account and enter an amount greater than zero." };
       if (values.type === "withdrawal" && values.amount > getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available) return { ok: false, message: "The withdrawal exceeds the available capital." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("create_capital_entry", {
+          target_workspace_id: workspaceId,
+          capital_payload: { capital_id: values.capitalId, type: values.type, amount: values.amount, note: values.note?.trim() || null },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this capital movement.") };
+        return refreshRemoteStore();
+      }
       const { date, month } = getDateParts();
       const entry: CapitalEntry = { id: makeId("capital-entry"), ...values, amount: values.amount, note: values.note?.trim(), date, month, createdAt: new Date().toISOString() };
       commit({ ...data, capitalEntries: [entry, ...data.capitalEntries] });
@@ -715,7 +737,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ products: nextProducts, transactions: nextTransactions, customers: data.customers.some((item) => item.id === customer.id) ? data.customers.map((item) => item.id === customer.id ? customer : item) : [customer, ...data.customers], suppliers: nextSuppliers, supplierPayments: purchasePayment ? [purchasePayment, ...data.supplierPayments] : data.supplierPayments, expenses: data.expenses, expenseCategories: data.expenseCategories, capitalAccounts: data.capitalAccounts, capitalEntries: data.capitalEntries });
       return { ok: true };
     },
-    addSupplierPayment: (values) => {
+    addSupplierPayment: async (values) => {
       const supplier = data.suppliers.find((item) => item.id === values.supplierId);
       if (!supplier || values.amount <= 0) return { ok: false, message: "Choose a supplier and enter a payment greater than zero." };
       const supplierName = normalizeName(supplier.name);
@@ -724,6 +746,17 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const outstanding = purchased + (supplier.openingBalance ?? 0) - paid;
       if (values.amount > outstanding) return { ok: false, message: "Payment cannot exceed the supplier's outstanding balance." };
       if (values.capitalId && values.amount > getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available) return { ok: false, message: "The supplier payment exceeds the available capital." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("record_supplier_payment", {
+          target_workspace_id: workspaceId,
+          payment_payload: { supplier_id: values.supplierId, amount: values.amount, note: values.note?.trim() || null, capital_id: values.capitalId ?? null },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this supplier payment.") };
+        return refreshRemoteStore();
+      }
       const { date } = getDateParts();
       const payment: SupplierPayment = { id: makeId("payment"), supplierId: supplier.id, amount: values.amount, capitalId: values.capitalId, note: values.note?.trim(), date, time: "Just now", createdAt: new Date().toISOString() };
       commit({ ...data, supplierPayments: [payment, ...data.supplierPayments] });
