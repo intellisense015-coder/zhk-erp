@@ -4,6 +4,9 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { defaultExpenseCategories, getCapitalSummary, productBrands, type CapitalAccount, type CapitalEntry, type Customer, type Expense, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from "./erp-data";
 import { createInvoiceNumber } from "./invoice-utils";
 import type { ExchangeFormValues, ProductFormValues, PurchaseFormValues, SaleFormValues } from "./validations";
+import { loadSupabaseStoreData } from "./supabase/erp-read";
+import { createSupabaseBrowserClient } from "./supabase/browser";
+import { isSupabaseConfigured } from "./supabase/config";
 
 // v2 intentionally starts with a clean workspace so the former demo snapshot
 // cannot reappear as real business data. Records created in this version persist
@@ -40,6 +43,17 @@ type StoreContextValue = StoreData & {
 const emptyStore: StoreData = { products: [], transactions: [], customers: [], suppliers: [], supplierPayments: [], expenses: [], expenseCategories: defaultExpenseCategories, capitalAccounts: [], capitalEntries: [] };
 const StoreContext = createContext<StoreContextValue | null>(null);
 
+function hasStoredRecords(store: StoreData) {
+  return store.products.length > 0
+    || store.transactions.length > 0
+    || store.customers.length > 0
+    || store.suppliers.length > 0
+    || store.supplierPayments.length > 0
+    || store.expenses.length > 0
+    || store.capitalAccounts.length > 0
+    || store.capitalEntries.length > 0;
+}
+
 function makeId(prefix: string) {
   return `${prefix}-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 }
@@ -71,7 +85,9 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      let localData = emptyStore;
       try {
         const stored = window.localStorage.getItem(STORAGE_KEY);
         if (stored) {
@@ -114,16 +130,30 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           const capitalAccounts = Array.isArray(parsed.capitalAccounts) ? parsed.capitalAccounts : [];
           const capitalEntries = Array.isArray(parsed.capitalEntries) ? parsed.capitalEntries : [];
           const nextData = { products, transactions: nextTransactions, customers, suppliers, supplierPayments: Array.isArray(parsed.supplierPayments) ? parsed.supplierPayments : [], expenses, expenseCategories, capitalAccounts, capitalEntries };
-          setData(nextData);
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextData));
+          localData = nextData;
         }
       } catch {
         window.localStorage.removeItem(STORAGE_KEY);
-      } finally {
-        setHydrated(true);
       }
+
+      let nextData = localData;
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (workspaceId && supabase) {
+          const remote = await loadSupabaseStoreData(supabase, workspaceId);
+          if (remote.data && (hasStoredRecords(remote.data) || !hasStoredRecords(localData))) {
+            nextData = remote.data;
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remote.data));
+          }
+        }
+      }
+
+      if (!active) return;
+      setData(nextData);
+      setHydrated(true);
     }, 0);
-    return () => window.clearTimeout(timer);
+    return () => { active = false; window.clearTimeout(timer); };
   }, []);
 
   const commit = (next: StoreData) => {
