@@ -9,7 +9,7 @@ import { useErpStore } from "../../lib/erp-store";
 import { purchaseSchema, type PurchaseFormValues } from "../../lib/validations";
 import { formatCurrency, getCapitalSummary, productBrands } from "../../lib/erp-data";
 
-type PurchaseFormModalProps = { open: boolean; onClose: () => void; onSubmit: (values: PurchaseFormValues) => void; onAddProduct?: () => void; serverError?: string | null };
+type PurchaseFormModalProps = { open: boolean; onClose: () => void; onSubmit: (values: PurchaseFormValues) => void | Promise<void>; onAddProduct?: () => void; serverError?: string | null };
 
 export function PurchaseFormModal({ open, onClose, onSubmit, onAddProduct, serverError }: PurchaseFormModalProps) {
   const { products, suppliers, capitalAccounts, capitalEntries, transactions, supplierPayments, hydrated } = useErpStore();

@@ -57,8 +57,8 @@ export default function PurchasesPage() {
   };
   const openPurchase = () => { setPurchaseError(null); setPurchaseOpen(true); };
   const closePurchase = () => { setPurchaseOpen(false); setPurchaseError(null); };
-  const savePurchase = (values: Parameters<typeof addPurchase>[0]) => {
-    const result = addPurchase(values);
+  const savePurchase = async (values: Parameters<typeof addPurchase>[0]) => {
+    const result = await addPurchase(values);
     if (result.ok) closePurchase();
     else setPurchaseError(result.message);
   };

@@ -26,7 +26,7 @@ type StoreContextValue = StoreData & {
   addSupplier: (values: { name: string; contactNumber: string; company?: string; cnicNumber?: string; openingBalance?: number }) => { ok: true; supplier: Supplier } | { ok: false; message: string };
   updateSupplier: (id: string, values: { name: string; contactNumber: string; company?: string; cnicNumber?: string; openingBalance?: number }) => { ok: true } | { ok: false; message: string };
   deleteSupplier: (id: string) => void;
-  addPurchase: (values: PurchaseFormValues) => { ok: true } | { ok: false; message: string };
+  addPurchase: (values: PurchaseFormValues) => Promise<{ ok: true } | { ok: false; message: string }>;
   updatePurchase: (id: string, values: { quantity: number; unitCost: number }) => { ok: true } | { ok: false; message: string };
   addSale: (values: SaleFormValues) => { ok: true } | { ok: false; message: string };
   addExchange: (values: ExchangeFormValues) => { ok: true } | { ok: false; message: string };
@@ -372,7 +372,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     deleteSupplier: (id) => {
       commit({ ...data, suppliers: data.suppliers.filter((supplier) => supplier.id !== id) });
     },
-    addPurchase: (values) => {
+    addPurchase: async (values) => {
       const product = data.products.find((item) => item.id === values.productId);
       if (!product) return { ok: false, message: "Add a product before recording stock." };
       const supplierName = values.vendorName.trim();
@@ -389,6 +389,28 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const capitalId = values.fundingSource === "capital" ? values.capitalId : undefined;
       if (values.fundingSource === "capital" && !capitalId) return { ok: false, message: "Choose a capital account for this purchase." };
       if (capitalId && values.paidAmount > getCapitalSummary(capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available) return { ok: false, message: "The purchase payment exceeds the available capital." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("record_purchase", {
+          target_workspace_id: workspaceId,
+          purchase_payload: {
+            product_id: values.productId,
+            supplier_id: values.supplierId || null,
+            vendor_name: supplierName,
+            supplier_contact_number: supplierContact,
+            supplier_company: supplierCompany,
+            quantity: values.quantity,
+            unit_cost: values.unitCost,
+            paid_amount: values.paidAmount,
+            funding_source: values.fundingSource ?? "other",
+            capital_id: capitalId ?? null,
+          },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this purchase.") };
+        return refreshRemoteStore();
+      }
       const { date, month } = getDateParts();
       const transaction: Transaction = { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), name: product.name, productId: product.id, unitCost: values.unitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: values.quantity, amount: total, paidAmount: values.paidAmount, outstandingAmount: total - values.paidAmount, fundingSource: values.fundingSource ?? "other", capitalId, time: "Just now", createdAt: new Date().toISOString(), date, month };
       const nextSuppliers = existingSupplier ? data.suppliers.map((item) => item.id === supplier.id ? supplier : item) : [supplier, ...data.suppliers];
