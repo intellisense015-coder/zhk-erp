@@ -132,7 +132,7 @@ export default function SuppliersPage() {
     setNotification({ variant: "success", message: "Supplier payment recorded successfully." });
   };
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: SupplierFieldErrors = {};
     if (!draft.name.trim()) nextErrors.name = "Supplier name is required.";
@@ -144,7 +144,7 @@ export default function SuppliersPage() {
       return;
     }
     const supplierValues = { ...draft, openingBalance: draft.openingBalance ? Number(draft.openingBalance) : 0 };
-    const result = editing ? updateSupplier(editing.id, supplierValues) : addSupplier(supplierValues);
+    const result = editing ? await updateSupplier(editing.id, supplierValues) : await addSupplier(supplierValues);
     if (!result.ok) {
       setFieldErrors({ contactNumber: result.message });
       return;
@@ -246,7 +246,7 @@ export default function SuppliersPage() {
         </form>
       </Modal>
 
-      <ConfirmDialog open={Boolean(deleteTarget)} title="Delete supplier?" description={deleteTarget ? `${deleteTarget.name} will be removed from the supplier directory.` : undefined} confirmLabel="Delete supplier" onClose={() => setDeleteTarget(null)} onConfirm={() => { if (deleteTarget) { deleteSupplier(deleteTarget.id); setNotification({ variant: "success", message: "Supplier deleted successfully." }); } setDeleteTarget(null); setSelected(null); }} />
+      <ConfirmDialog open={Boolean(deleteTarget)} title="Delete supplier?" description={deleteTarget ? `${deleteTarget.name} will be removed from the supplier directory.` : undefined} confirmLabel="Delete supplier" onClose={() => setDeleteTarget(null)} onConfirm={async () => { if (deleteTarget) { const result = await deleteSupplier(deleteTarget.id); if (!result.ok) { setNotification({ variant: "error", message: result.message }); setDeleteTarget(null); return; } setNotification({ variant: "success", message: "Supplier deleted successfully." }); } setDeleteTarget(null); setSelected(null); }} />
       <Notification message={notification?.message} variant={notification?.variant ?? "success"} onDismiss={() => setNotification(null)} />
     </div>
   );

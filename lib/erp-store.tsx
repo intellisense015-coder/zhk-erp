@@ -20,12 +20,12 @@ type StoreContextValue = StoreData & {
   addProduct: (values: ProductFormValues) => Promise<StoreResult>;
   updateProduct: (id: string, values: ProductFormValues) => Promise<StoreResult>;
   deleteProduct: (id: string) => Promise<StoreResult>;
-  addCustomer: (values: { name: string; contactNumber: string; gender?: string; cnicNumber?: string }) => { ok: true; customer: Customer } | { ok: false; message: string };
-  updateCustomer: (id: string, values: { name: string; contactNumber: string; gender?: string; cnicNumber?: string }) => { ok: true } | { ok: false; message: string };
-  deleteCustomer: (id: string) => void;
-  addSupplier: (values: { name: string; contactNumber: string; company?: string; cnicNumber?: string; openingBalance?: number }) => { ok: true; supplier: Supplier } | { ok: false; message: string };
-  updateSupplier: (id: string, values: { name: string; contactNumber: string; company?: string; cnicNumber?: string; openingBalance?: number }) => { ok: true } | { ok: false; message: string };
-  deleteSupplier: (id: string) => void;
+  addCustomer: (values: { name: string; contactNumber: string; gender?: string; cnicNumber?: string }) => Promise<{ ok: true; customer?: Customer } | { ok: false; message: string }>;
+  updateCustomer: (id: string, values: { name: string; contactNumber: string; gender?: string; cnicNumber?: string }) => Promise<StoreResult>;
+  deleteCustomer: (id: string) => Promise<StoreResult>;
+  addSupplier: (values: { name: string; contactNumber: string; company?: string; cnicNumber?: string; openingBalance?: number }) => Promise<{ ok: true; supplier?: Supplier } | { ok: false; message: string }>;
+  updateSupplier: (id: string, values: { name: string; contactNumber: string; company?: string; cnicNumber?: string; openingBalance?: number }) => Promise<StoreResult>;
+  deleteSupplier: (id: string) => Promise<StoreResult>;
   addPurchase: (values: PurchaseFormValues) => Promise<{ ok: true } | { ok: false; message: string }>;
   updatePurchase: (id: string, values: { quantity: number; unitCost: number }) => { ok: true } | { ok: false; message: string };
   addSale: (values: SaleFormValues) => Promise<StoreResult>;
@@ -319,30 +319,62 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ ...data, products: data.products.filter((product) => product.id !== id) });
       return { ok: true };
     },
-    addCustomer: (values) => {
+    addCustomer: async (values) => {
       const name = values.name.trim();
       const contactNumber = normalizeContact(values.contactNumber);
       if (!name || !contactNumber) return { ok: false, message: "Customer name and contact number are required." };
       if (ownerContact && ownerContact === contactNumber) return { ok: false, message: "The business owner's number cannot be used as a customer contact." };
       if (data.customers.some((customer) => customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number is already assigned to another customer." };
       if (data.suppliers.some((supplier) => supplier.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a supplier and cannot be reused for a customer." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("create_customer", {
+          target_workspace_id: workspaceId,
+          customer_payload: { name, contact_number: contactNumber, gender: values.gender?.trim() ?? "", cnic_number: values.cnicNumber?.trim() ?? "" },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not add this customer.") };
+        return refreshRemoteStore();
+      }
       const customer: Customer = { id: makeId("customer"), name, contactNumber, gender: values.gender?.trim() ?? "", cnicNumber: values.cnicNumber?.trim() ?? "", code: makeUniqueCustomerCode(`CUST-${String(data.customers.length + 1).padStart(3, "0")}`, data.customers), createdAt: new Date().toISOString() };
       commit({ ...data, customers: [customer, ...data.customers] });
       return { ok: true, customer };
     },
-    updateCustomer: (id, values) => {
+    updateCustomer: async (id, values) => {
       if (!values.name.trim() || !normalizeContact(values.contactNumber)) return { ok: false, message: "Customer name and contact number are required." };
       const contactNumber = normalizeContact(values.contactNumber);
       if (ownerContact && ownerContact === contactNumber) return { ok: false, message: "The business owner's number cannot be used as a customer contact." };
       if (data.customers.some((customer) => customer.id !== id && customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number is already assigned to another customer." };
       if (data.suppliers.some((supplier) => supplier.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a supplier and cannot be reused for a customer." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("update_customer", {
+          target_workspace_id: workspaceId,
+          target_customer_id: id,
+          customer_payload: { name: values.name.trim(), contact_number: contactNumber, gender: values.gender?.trim() ?? "", cnic_number: values.cnicNumber?.trim() ?? "" },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this customer.") };
+        return refreshRemoteStore();
+      }
       commit({ ...data, customers: data.customers.map((customer) => customer.id === id ? { ...customer, name: values.name.trim(), contactNumber, gender: values.gender?.trim() ?? "", cnicNumber: values.cnicNumber?.trim() ?? "" } : customer) });
       return { ok: true };
     },
-    deleteCustomer: (id) => {
+    deleteCustomer: async (id) => {
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("delete_customer", { target_workspace_id: workspaceId, target_customer_id: id });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not delete this customer.") };
+        return refreshRemoteStore();
+      }
       commit({ ...data, customers: data.customers.filter((customer) => customer.id !== id) });
+      return { ok: true };
     },
-    addSupplier: (values) => {
+    addSupplier: async (values) => {
       const name = values.name.trim();
       const contactNumber = normalizeContact(values.contactNumber);
       const company = values.company?.trim() ?? "";
@@ -352,11 +384,22 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (ownerContact && ownerContact === contactNumber) return { ok: false, message: "The business owner's number cannot be used as a supplier contact." };
       if (data.suppliers.some((supplier) => supplier.contactNumber === contactNumber)) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
       if (data.customers.some((customer) => customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("create_supplier", {
+          target_workspace_id: workspaceId,
+          supplier_payload: { name, contact_number: contactNumber, company, cnic_number: cnicNumber, opening_balance: openingBalance },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not add this supplier.") };
+        return refreshRemoteStore();
+      }
       const supplier: Supplier = { id: makeId("supplier"), name, contactNumber, company, cnicNumber, openingBalance, createdAt: new Date().toISOString() };
       commit({ ...data, suppliers: [supplier, ...data.suppliers] });
       return { ok: true, supplier };
     },
-    updateSupplier: (id, values) => {
+    updateSupplier: async (id, values) => {
       const name = values.name.trim();
       const contactNumber = normalizeContact(values.contactNumber);
       const company = values.company?.trim() ?? "";
@@ -366,11 +409,32 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (ownerContact && ownerContact === contactNumber) return { ok: false, message: "The business owner's number cannot be used as a supplier contact." };
       if (data.suppliers.some((supplier) => supplier.id !== id && supplier.contactNumber === contactNumber)) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
       if (data.customers.some((customer) => customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("update_supplier", {
+          target_workspace_id: workspaceId,
+          target_supplier_id: id,
+          supplier_payload: { name, contact_number: contactNumber, company, cnic_number: cnicNumber, opening_balance: openingBalance },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this supplier.") };
+        return refreshRemoteStore();
+      }
       commit({ ...data, suppliers: data.suppliers.map((supplier) => supplier.id === id ? { ...supplier, name, contactNumber, company, cnicNumber, openingBalance } : supplier) });
       return { ok: true };
     },
-    deleteSupplier: (id) => {
+    deleteSupplier: async (id) => {
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("delete_supplier", { target_workspace_id: workspaceId, target_supplier_id: id });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not delete this supplier.") };
+        return refreshRemoteStore();
+      }
       commit({ ...data, suppliers: data.suppliers.filter((supplier) => supplier.id !== id) });
+      return { ok: true };
     },
     addPurchase: async (values) => {
       const product = data.products.find((item) => item.id === values.productId);

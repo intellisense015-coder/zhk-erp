@@ -127,7 +127,7 @@ export default function CustomersPage() {
     setRegistrationMonth("All months");
   };
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: CustomerFieldErrors = {};
     if (!draft.name.trim()) nextErrors.name = "Customer name is required.";
@@ -138,7 +138,7 @@ export default function CustomersPage() {
       setFieldErrors(nextErrors);
       return;
     }
-    const result = editing ? updateCustomer(editing.id, draft) : addCustomer(draft);
+    const result = editing ? await updateCustomer(editing.id, draft) : await addCustomer(draft);
     if (!result.ok) {
       setFieldErrors({ contactNumber: result.message });
       return;
@@ -236,7 +236,7 @@ export default function CustomersPage() {
         </form>
       </Modal>
 
-      <ConfirmDialog open={Boolean(deleteTarget)} title="Delete customer?" description={deleteTarget ? `${deleteTarget.name} will be removed from the customer directory.` : undefined} confirmLabel="Delete customer" onClose={() => setDeleteTarget(null)} onConfirm={() => { if (deleteTarget) { deleteCustomer(deleteTarget.id); setNotification({ variant: "success", message: "Customer deleted successfully." }); } setDeleteTarget(null); setSelected(null); }} />
+      <ConfirmDialog open={Boolean(deleteTarget)} title="Delete customer?" description={deleteTarget ? `${deleteTarget.name} will be removed from the customer directory.` : undefined} confirmLabel="Delete customer" onClose={() => setDeleteTarget(null)} onConfirm={async () => { if (deleteTarget) { const result = await deleteCustomer(deleteTarget.id); if (!result.ok) { setNotification({ variant: "error", message: result.message }); setDeleteTarget(null); return; } setNotification({ variant: "success", message: "Customer deleted successfully." }); } setDeleteTarget(null); setSelected(null); }} />
       <Notification message={notification?.message} variant={notification?.variant ?? "success"} onDismiss={() => setNotification(null)} />
     </div>
   );
