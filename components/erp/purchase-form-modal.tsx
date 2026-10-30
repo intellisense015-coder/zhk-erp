@@ -9,9 +9,9 @@ import { useErpStore } from "../../lib/erp-store";
 import { purchaseSchema, type PurchaseFormValues } from "../../lib/validations";
 import { formatCurrency, getCapitalSummary, productBrands } from "../../lib/erp-data";
 
-type PurchaseFormModalProps = { open: boolean; onClose: () => void; onSubmit: (values: PurchaseFormValues) => void; onAddProduct?: () => void };
+type PurchaseFormModalProps = { open: boolean; onClose: () => void; onSubmit: (values: PurchaseFormValues) => void; onAddProduct?: () => void; serverError?: string | null };
 
-export function PurchaseFormModal({ open, onClose, onSubmit, onAddProduct }: PurchaseFormModalProps) {
+export function PurchaseFormModal({ open, onClose, onSubmit, onAddProduct, serverError }: PurchaseFormModalProps) {
   const { products, suppliers, capitalAccounts, capitalEntries, transactions, supplierPayments, hydrated } = useErpStore();
   const defaultValues = useMemo<PurchaseFormValues>(() => ({ supplierId: "", vendorName: "", supplierContactNumber: "", supplierCompany: "", productId: products[0]?.id ?? "", quantity: 1, unitCost: products[0]?.costPrice ?? 1, paidAmount: 0, capitalId: "", fundingSource: "supplier-credit" }), [products]);
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset, setValue, control } = useForm<PurchaseFormValues>({ resolver: zodResolver(purchaseSchema), defaultValues });
@@ -31,6 +31,7 @@ export function PurchaseFormModal({ open, onClose, onSubmit, onAddProduct }: Pur
     return `${brand} · ${product.category} · ${model} · ${product.color || "Unspecified"}`;
   };
   return <Modal open={open} loading={!hydrated} title="Add stock" description="Record incoming supplier stock and its payment status." onClose={onClose}>
+    {serverError && <p role="alert" className="mx-5 mt-5 rounded-xl bg-[var(--error-glow)] px-4 py-3 text-xs font-bold text-[var(--error)]">{serverError}</p>}
     {!products.length ? <div className="p-5"><p className="text-sm font-semibold text-[var(--text-primary)]">Add a product first</p><p className="mt-1 text-xs text-[var(--text-muted)]">Stock entries need an inventory product to attach to.</p></div> :
     <form onSubmit={handleSubmit(onSubmit)} className="grid gap-x-5 gap-y-1 p-5 sm:grid-cols-2">
       <SelectField label="Item" searchable searchPlaceholder="Search brand, category, or model..." value={productId} hint={errors.productId?.message} onChange={(event) => { if (event.target.value === "__new_product__") { onAddProduct?.(); return; } const product = products.find((item) => item.id === event.target.value); setValue("productId", event.target.value, { shouldValidate: true }); if (product) setValue("unitCost", product.costPrice, { shouldValidate: true }); }}><option value="__new_product__">+ New Product</option>{products.map((product) => <option key={product.id} value={product.id}>{productOptionLabel(product)}</option>)}</SelectField>

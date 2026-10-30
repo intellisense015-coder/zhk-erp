@@ -6,12 +6,13 @@ import { useMemo, useState } from "react";
 import { KpiCard } from "../../../components/erp/kpi-card";
 import { Button } from "../../../components/primitives/button";
 import { Modal, SelectField } from "../../../components/primitives/primitives";
+import { PurchaseFormModal } from "../../../components/erp/purchase-form-modal";
 import { DataTable, TableBadge } from "../../../components/primitives/table";
 import { formatCompactCurrency, formatCurrency, formatTransactionTime, getMonthOptions } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
 
 export default function PurchasesPage() {
-  const { products, transactions, suppliers, supplierPayments } = useErpStore();
+  const { products, transactions, suppliers, supplierPayments, addPurchase } = useErpStore();
   const router = useRouter();
   const purchases = useMemo(() => transactions.filter((transaction) => transaction.type === "purchase"), [transactions]);
   const monthOptions = useMemo(() => getMonthOptions(purchases), [purchases]);
@@ -25,6 +26,8 @@ export default function PurchasesPage() {
   const [draftSupplier, setDraftSupplier] = useState("all");
   const [filterOpen, setFilterOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
   const visible = useMemo(() => purchases.filter((purchase) => {
     const matchesMonth = month === "all" || purchase.month === month;
@@ -52,6 +55,13 @@ export default function PurchasesPage() {
     setDraftMonth("all");
     setDraftSupplier("all");
   };
+  const openPurchase = () => { setPurchaseError(null); setPurchaseOpen(true); };
+  const closePurchase = () => { setPurchaseOpen(false); setPurchaseError(null); };
+  const savePurchase = (values: Parameters<typeof addPurchase>[0]) => {
+    const result = addPurchase(values);
+    if (result.ok) closePurchase();
+    else setPurchaseError(result.message);
+  };
 
   return (
     <div className="erp-content">
@@ -60,10 +70,16 @@ export default function PurchasesPage() {
           <h1 className="erp-page-title">Purchase history</h1>
           <p className="erp-page-subtitle">Review stock received from suppliers and its purchase history.</p>
         </div>
-        <Button variant="secondary" onClick={() => { setDraftMonth(month); setDraftSupplier(supplier); setFilterOpen(true); }}>
-          <Filter size={15} />
-          Filters
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => { setDraftMonth(month); setDraftSupplier(supplier); setFilterOpen(true); }}>
+            <Filter size={15} />
+            Filters
+          </Button>
+          <Button variant="brand" onClick={openPurchase}>
+            <PackagePlus size={15} />
+            Add stock
+          </Button>
+        </div>
       </div>
 
       <div className="solexa-filter-chips">
@@ -126,6 +142,8 @@ export default function PurchasesPage() {
           </div>
         </div>
       </Modal>
+
+      <PurchaseFormModal open={purchaseOpen} onClose={closePurchase} onSubmit={savePurchase} serverError={purchaseError} />
 
     </div>
   );
