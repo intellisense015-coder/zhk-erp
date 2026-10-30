@@ -28,7 +28,7 @@ type StoreContextValue = StoreData & {
   deleteSupplier: (id: string) => void;
   addPurchase: (values: PurchaseFormValues) => Promise<{ ok: true } | { ok: false; message: string }>;
   updatePurchase: (id: string, values: { quantity: number; unitCost: number }) => { ok: true } | { ok: false; message: string };
-  addSale: (values: SaleFormValues) => { ok: true } | { ok: false; message: string };
+  addSale: (values: SaleFormValues) => Promise<StoreResult>;
   addExchange: (values: ExchangeFormValues) => { ok: true } | { ok: false; message: string };
   addSupplierPayment: (values: { supplierId: string; amount: number; note?: string; capitalId?: string }) => { ok: true } | { ok: false; message: string };
   addExpense: (values: ExpenseFormValues) => { ok: true } | { ok: false; message: string };
@@ -476,8 +476,30 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ ...data, capitalEntries: [entry, ...data.capitalEntries] });
       return { ok: true };
     },
-    addSale: (values) => {
+    addSale: async (values) => {
       if (values.items.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.unitSellingPrice) || item.unitSellingPrice <= 0 || item.discount < 0)) return { ok: false, message: "Quantity, selling price, and discount values must be valid." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("record_sale", {
+          target_workspace_id: workspaceId,
+          sale_payload: {
+            customer_id: values.customerId ?? null,
+            customer_name: values.customerName,
+            customer_contact_number: values.customerContactNumber,
+            customer_code: values.customerCode,
+            items: values.items.map((item) => ({
+              product_id: item.productId,
+              quantity: item.quantity,
+              unit_selling_price: item.unitSellingPrice,
+              discount: item.discount,
+            })),
+          },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not complete this sale.") };
+        return refreshRemoteStore();
+      }
       const contactNumber = normalizeContact(values.customerContactNumber);
       const customerCode = normalizeCode(values.customerCode);
       if (ownerContact && ownerContact === contactNumber) return { ok: false, message: "The business owner's number cannot be used as a customer contact." };

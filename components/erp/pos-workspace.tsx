@@ -164,10 +164,10 @@ export function PosWorkspace() {
     if (mode === "exchange") selectReceivedProduct(product.id);
   };
 
-  const submitSale = () => {
+  const submitSale = async () => {
     if (!cart.length) { setError("Add at least one in-stock product to the order."); return; }
     if (cart.some((item) => !Number.isFinite(item.unitSellingPrice) || item.unitSellingPrice <= 0)) { setError("Every product must have a selling price greater than zero."); return; }
-    const result = addSale({ customerId: customerId || undefined, customerName, customerContactNumber, customerCode, items: discountedCart });
+    const result = await addSale({ customerId: customerId || undefined, customerName, customerContactNumber, customerCode, items: discountedCart });
     if (!result.ok) { setError(result.message); setSuccess(null); return; }
     setCart([]);
     setOrderDiscount("0");
