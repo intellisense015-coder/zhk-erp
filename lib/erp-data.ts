@@ -373,8 +373,9 @@ export const formatCurrency = (value: number) => `Rs ${new Intl.NumberFormat("en
 export const formatCompactCurrency = (value: number) => {
   const absolute = Math.abs(value);
   const sign = value < 0 ? "-" : "";
-  if (absolute >= 1_000_000) return `Rs ${sign}${Math.round(absolute / 1_000_000)}M`;
-  if (absolute >= 1_000) return `Rs ${sign}${Math.round(absolute / 1_000)}K`;
+  const compactNumber = (divisor: number) => new Intl.NumberFormat("en-PK", { maximumFractionDigits: 1 }).format(absolute / divisor);
+  if (absolute >= 1_000_000) return `Rs ${sign}${compactNumber(1_000_000)}M`;
+  if (absolute >= 1_000) return `Rs ${sign}${compactNumber(1_000)}K`;
   return formatCurrency(value);
 };
 

@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { formatCurrency, formatTransactionTime } from "../../lib/erp-data";
 import { useErpStore } from "../../lib/erp-store";
+import { permissionForPath } from "../../lib/supabase/access";
 
 // ==========================================
 // Types
@@ -35,6 +36,7 @@ export interface SearchResultItem {
   category?: string;
   description?: string;
   icon?: LucideIcon;
+  permissionKey?: string;
 }
 
 export interface DashboardHeaderProps {
@@ -44,21 +46,23 @@ export interface DashboardHeaderProps {
   onOpenMobileMenu?: () => void;
   onNavigate?: (href: string) => void;
   onSignOut?: () => void;
+  visiblePermissionKeys?: ReadonlySet<string>;
+  editablePermissionKeys?: ReadonlySet<string>;
 }
 
 type OpenDropdown = "quick" | "profile" | null;
 
 const DEFAULT_SEARCH_MODULES: SearchResultItem[] = [
-  { label: "Dashboard", href: "/dashboard", category: "Dasgboard", icon: LayoutDashboard },
-  { label: "POS", href: "/pos", category: "Sales", icon: ShoppingCart },
-  { label: "Inventory", href: "/inventory", category: "Inventory", icon: Boxes },
-  { label: "Sales", href: "/sales", category: "Sales", icon: ShoppingCart },
-  { label: "Reports", href: "/reports", category: "Insights", icon: BarChart3 },
-  { label: "Transactions", href: "/transactions", category: "Insights", icon: ClipboardList },
-  { label: "Low stock", href: "/low-stock", category: "Operations", icon: Boxes },
-  { label: "Customers", href: "/customers", category: "Entities", icon: Users },
-  { label: "Suppliers", href: "/suppliers", category: "Entities", icon: Building2 },
-  { label: "Settings", href: "/settings", category: "Operations", icon: Settings2 },
+  { label: "Dashboard", href: "/dashboard", category: "Dasgboard", icon: LayoutDashboard, permissionKey: "dashboard" },
+  { label: "POS", href: "/pos", category: "Sales", icon: ShoppingCart, permissionKey: "pos" },
+  { label: "Inventory", href: "/inventory", category: "Inventory", icon: Boxes, permissionKey: "inventory" },
+  { label: "Sales", href: "/sales", category: "Sales", icon: ShoppingCart, permissionKey: "sales" },
+  { label: "Reports", href: "/reports", category: "Insights", icon: BarChart3, permissionKey: "reports" },
+  { label: "Transactions", href: "/transactions", category: "Insights", icon: ClipboardList, permissionKey: "transactions" },
+  { label: "Low stock", href: "/low-stock", category: "Operations", icon: Boxes, permissionKey: "inventory" },
+  { label: "Customers", href: "/customers", category: "Entities", icon: Users, permissionKey: "customers" },
+  { label: "Suppliers", href: "/suppliers", category: "Entities", icon: Building2, permissionKey: "suppliers" },
+  { label: "Settings", href: "/settings", category: "Operations", icon: Settings2, permissionKey: "settings" },
 ];
 
 // Helper: dynamic time greeting
@@ -78,6 +82,8 @@ export function OsHeader({
   onOpenMobileMenu,
   onNavigate,
   onSignOut,
+  visiblePermissionKeys,
+  editablePermissionKeys,
 }: DashboardHeaderProps) {
   const { products, transactions, customers, suppliers } = useErpStore();
   const [openDropdown, setOpenDropdown] = useState<OpenDropdown>(null);
@@ -169,9 +175,12 @@ export function OsHeader({
     ...suppliers.map((supplier) => ({ label: supplier.name, href: "/suppliers", category: "Suppliers", description: `${supplier.company || "Supplier"} · ${supplier.contactNumber}`, icon: Building2 })),
     ...transactions.map((transaction) => ({ label: `${transaction.source === "customer-trade-in" ? "Trade-in" : transaction.type === "sale" ? "Sale" : transaction.type === "purchase" ? "Supplier stock" : "Transfer"} · ${transaction.party}`, href: transaction.type === "sale" ? "/sales" : "/transactions", category: "Activity", description: `${transaction.name} · ${formatCurrency(transaction.amount)} · ${formatTransactionTime(transaction)}`, icon: transaction.type === "sale" ? ShoppingCart : transaction.type === "purchase" ? Truck : ClipboardList })),
   ];
-  const filteredSearchResults = [...DEFAULT_SEARCH_MODULES, ...searchableRecords].filter((item) =>
+  const isVisible = (permissionKey?: string | null) => !permissionKey || !visiblePermissionKeys || visiblePermissionKeys.has(permissionKey);
+  const canEdit = (permissionKey: string) => !editablePermissionKeys || editablePermissionKeys.has(permissionKey);
+  const filteredSearchResults = [...DEFAULT_SEARCH_MODULES.filter((item) => isVisible(item.permissionKey)), ...searchableRecords.filter((item) => isVisible(permissionForPath(item.href)))].filter((item) =>
     `${item.label} ${item.category ?? ""} ${item.description ?? ""}`.toLowerCase().includes(searchQuery.trim().toLowerCase())
   ).slice(0, 8);
+  const canShowQuickActions = canEdit("inventory") || canEdit("pos");
 
   const initials = userName
     .split(/\s+/)
@@ -278,10 +287,10 @@ export function OsHeader({
           </div>
 
           {/* Quick actions */}
-          <div className="dropdown-anchor quick-action-wrapper">
+          {canShowQuickActions && <div className="dropdown-anchor quick-action-wrapper">
             <button type="button" onClick={() => toggleDropdown("quick")} aria-label="Quick actions" aria-expanded={openDropdown === "quick"} className={`quick-action-trigger-btn ${openDropdown === "quick" ? "is-active" : ""}`}><Grid2X2 size={14} /><span className="quick-action-text">Quick actions</span></button>
-            {openDropdown === "quick" && <div className="header-dropdown-card quick-popover"><p className="notif-title">Quick actions</p><div className="quick-grid"><button type="button" className="quick-card-btn" onClick={() => { onNavigate?.("/inventory/new"); setOpenDropdown(null); }}><span className="quick-icon-box"><Plus size={15} /></span><span className="quick-card-info"><span className="quick-card-title">Add product</span><span className="quick-card-desc">Create a new inventory item</span></span></button><button type="button" className="quick-card-btn" onClick={() => { onNavigate?.("/sales"); setOpenDropdown(null); }}><span className="quick-icon-box"><ShoppingCart size={15} /></span><span className="quick-card-info"><span className="quick-card-title">New sale</span><span className="quick-card-desc">Record a customer sale</span></span></button></div></div>}
-          </div>
+            {openDropdown === "quick" && <div className="header-dropdown-card quick-popover"><p className="notif-title">Quick actions</p><div className="quick-grid">{canEdit("inventory") && <button type="button" className="quick-card-btn" onClick={() => { onNavigate?.("/inventory/new"); setOpenDropdown(null); }}><span className="quick-icon-box"><Plus size={15} /></span><span className="quick-card-info"><span className="quick-card-title">Add product</span><span className="quick-card-desc">Create a new inventory item</span></span></button>}{canEdit("pos") && <button type="button" className="quick-card-btn" onClick={() => { onNavigate?.("/sales"); setOpenDropdown(null); }}><span className="quick-icon-box"><ShoppingCart size={15} /></span><span className="quick-card-info"><span className="quick-card-title">New sale</span><span className="quick-card-desc">Record a customer sale</span></span></button>}</div></div>}
+          </div>}
 
           {/* Profile Dropdown */}
           <div className="dropdown-anchor">
@@ -309,7 +318,7 @@ export function OsHeader({
                   </div>
 
                   <div className="profile-actions-list">
-                    <button
+                    {isVisible("users") && <button
                       type="button"
                       onClick={() => {
                         onNavigate?.("/dashboard/users");
@@ -319,9 +328,9 @@ export function OsHeader({
                     >
                       <UserRound size={14} className="menu-icon-layer" />
                       <span>Users & Permissions</span>
-                    </button>
+                    </button>}
 
-                    <button
+                    {isVisible("settings") && <button
                       type="button"
                       onClick={() => {
                         onNavigate?.("/settings");
@@ -331,7 +340,7 @@ export function OsHeader({
                     >
                       <Settings2 size={14} className="menu-icon-layer" />
                       <span>Settings</span>
-                    </button>
+                    </button>}
 
                     <div className="profile-divider" />
 

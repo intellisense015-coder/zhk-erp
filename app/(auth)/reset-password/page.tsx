@@ -7,6 +7,11 @@ import { Button } from "../../../components/primitives/button";
 import { Field } from "../../../components/primitives/primitives";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 
+function safeNextPath(value: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return "/dashboard";
+  return value;
+}
+
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
@@ -14,10 +19,17 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [ready, setReady] = useState(false);
+  const [returnTo, setReturnTo] = useState("/dashboard");
+  const [invitationSetup, setInvitationSetup] = useState(false);
 
   useEffect(() => {
     let active = true;
     const verifyRecoverySession = async () => {
+      const params = new URL(window.location.href).searchParams;
+      const nextPath = safeNextPath(params.get("next"));
+      setReturnTo(nextPath);
+      setInvitationSetup(params.get("invite") === "1" && nextPath.startsWith("/invite/accept?invitation="));
+
       const supabase = createSupabaseBrowserClient();
       if (!supabase) {
         router.replace("/login");
@@ -54,7 +66,10 @@ export default function ResetPasswordPage() {
     }
 
     setSaving(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password });
+    const { error: updateError } = await supabase.auth.updateUser({
+      password,
+      data: invitationSetup ? { password_initialized: true } : undefined,
+    });
     if (updateError) {
       setError("We could not update your password. Please request a new link.");
       setSaving(false);
@@ -62,8 +77,8 @@ export default function ResetPasswordPage() {
     }
 
     await supabase.auth.signOut();
-    router.replace("/login");
+    router.replace(`/login?next=${encodeURIComponent(returnTo)}`);
   };
 
-  return <main className="auth-page"><section className="auth-card"><Link href="/login" className="auth-link">← Back to sign in</Link><div className="mt-7"><p className="erp-eyebrow">Account recovery</p><h1 className="auth-title">Choose a new password</h1><p className="auth-subtitle">Use at least 8 characters. Your recovery session will end after the password changes.</p></div><form className="auth-form" onSubmit={submit}><Field label="New password" type="password" required autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /><Field label="Confirm password" type="password" required autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />{error && <p className="auth-field-error" role="alert">{error}</p>}<Button type="submit" variant="brand" loading={saving} disabled={!ready}>Update password <span aria-hidden>→</span></Button></form></section></main>;
+  return <main className="auth-page"><section className="auth-card"><Link href="/login" className="auth-link">← Back to sign in</Link><div className="mt-7"><p className="erp-eyebrow">{invitationSetup ? "Solexa workspace access" : "Account recovery"}</p><h1 className="auth-title">{invitationSetup ? "Set your password" : "Choose a new password"}</h1><p className="auth-subtitle">{invitationSetup ? "Create your password first. You will then sign in, set up Microsoft Authenticator, and enter your workspace." : "Use at least 8 characters. Your recovery session will end after the password changes."}</p></div><form className="auth-form" onSubmit={submit}><Field label="New password" type="password" required autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /><Field label="Confirm password" type="password" required autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />{error && <p className="auth-field-error" role="alert">{error}</p>}<Button type="submit" variant="brand" loading={saving} disabled={!ready}>{invitationSetup ? "Save password" : "Update password"} <span aria-hidden>→</span></Button></form></section></main>;
 }

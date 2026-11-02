@@ -1,19 +1,20 @@
 "use client";
 
-import { ArrowDownLeft, ClipboardList, Eye, Filter, PackagePlus, Receipt, Search, X } from "lucide-react";
+import { ArrowDownLeft, ClipboardList, Eye, Filter, PackagePlus, Pencil, Receipt, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { KpiCard } from "../../../components/erp/kpi-card";
 import { Button } from "../../../components/primitives/button";
 import { Modal, SelectField } from "../../../components/primitives/primitives";
 import { PurchaseFormModal } from "../../../components/erp/purchase-form-modal";
+import { PurchaseEditModal } from "../../../components/erp/purchase-edit-modal";
 import { Notification, type NotificationVariant } from "../../../components/primitives/notification";
 import { DataTable, TableBadge } from "../../../components/primitives/table";
 import { formatCompactCurrency, formatCurrency, formatTransactionTime, getMonthOptions } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
 
 export default function PurchasesPage() {
-  const { products, transactions, suppliers, supplierPayments, addPurchase } = useErpStore();
+  const { products, transactions, suppliers, supplierPayments, addPurchase, updatePurchase } = useErpStore();
   const router = useRouter();
   const purchases = useMemo(() => transactions.filter((transaction) => transaction.type === "purchase"), [transactions]);
   const monthOptions = useMemo(() => getMonthOptions(purchases), [purchases]);
@@ -30,6 +31,8 @@ export default function PurchasesPage() {
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ message: string; variant: NotificationVariant } | null>(null);
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const visible = useMemo(() => purchases.filter((purchase) => {
     const matchesMonth = month === "all" || purchase.month === month;
@@ -63,6 +66,16 @@ export default function PurchasesPage() {
     const result = await addPurchase(values);
     if (result.ok) { closePurchase(); setNotification({ variant: "success", message: "Stock added and purchase recorded successfully." }); }
     else setPurchaseError(result.message);
+  };
+  const editingPurchase = editingPurchaseId ? purchases.find((purchase) => purchase.id === editingPurchaseId) ?? null : null;
+  const editingProduct = editingPurchase ? products.find((product) => product.id === editingPurchase.productId) : undefined;
+  const openEdit = (purchase: typeof purchases[number]) => { setEditError(null); setNotification(null); setEditingPurchaseId(purchase.id); };
+  const closeEdit = () => { setEditingPurchaseId(null); setEditError(null); };
+  const saveEdit = async (values: { quantity: number; unitCost: number }) => {
+    if (!editingPurchase) return;
+    const result = await updatePurchase(editingPurchase.id, values);
+    if (result.ok) { closeEdit(); setNotification({ variant: "success", message: "Purchase updated and inventory recalculated successfully." }); }
+    else setEditError(result.message);
   };
 
   return (
@@ -127,7 +140,7 @@ export default function PurchasesPage() {
             { key: "outstandingAmount", header: "Outstanding", width: "12%", sortable: true, align: "right", accessor: (purchase) => <TableBadge tone={(purchase.outstandingAmount ?? purchase.amount) > 0 ? "danger" : "success"}>{formatCurrency(purchase.outstandingAmount ?? Math.max(0, purchase.amount - (purchase.paidAmount ?? 0)))}</TableBadge> },
             { key: "funding", header: "Funding", width: "12%", sortable: true, accessor: (purchase) => purchase.fundingSource === "capital" ? <TableBadge tone="success">Capital</TableBadge> : purchase.fundingSource === "supplier-credit" ? <TableBadge tone="warning">Credit</TableBadge> : <span className="text-[var(--text-muted)]">Other</span> },
             { key: "date", header: "Recorded", width: "12%", sortable: true, accessor: (purchase) => <span className="text-[var(--text-muted)]">{formatTransactionTime(purchase)}</span> },
-            { key: "actions", header: "View", align: "right", accessor: (purchase) => <button type="button" className="table-icon-button" aria-label={`View invoice for ${purchase.party}`} title="View invoice" onClick={(event) => { event.stopPropagation(); router.push(`/invoices?id=${purchase.id}&type=purchase`); }}><Eye size={14} /></button> },
+             { key: "actions", header: "Actions", align: "right", accessor: (purchase) => <div className="table-row-actions"><button type="button" className="table-icon-button" aria-label={`View invoice for ${purchase.party}`} title="View invoice" onClick={(event) => { event.stopPropagation(); router.push(`/invoices?id=${purchase.id}&type=purchase`); }}><Eye size={14} /></button><button type="button" className="table-icon-button" aria-label={`Edit purchase from ${purchase.party}`} title="Edit purchase" onClick={(event) => { event.stopPropagation(); openEdit(purchase); }} disabled={!purchase.productId}><Pencil size={14} /></button></div> },
           ]}
         />
       </section>
@@ -146,6 +159,7 @@ export default function PurchasesPage() {
       </Modal>
 
       <PurchaseFormModal open={purchaseOpen} onClose={closePurchase} onSubmit={savePurchase} serverError={purchaseError} onDismissServerError={() => setPurchaseError(null)} />
+      <PurchaseEditModal open={Boolean(editingPurchase)} productName={editingPurchase?.name ?? editingProduct?.name ?? "purchase"} purchaseQuantity={editingPurchase?.quantity ?? 1} purchaseUnitCost={editingPurchase?.unitCost ?? (editingPurchase?.quantity ? editingPurchase.amount / editingPurchase.quantity : 0)} paidAmount={editingPurchase?.paidAmount ?? 0} onClose={closeEdit} onSubmit={saveEdit} serverError={editError} onDismissServerError={() => setEditError(null)} />
       <Notification message={notification?.message} variant={notification?.variant ?? "success"} onDismiss={() => setNotification(null)} />
 
     </div>

@@ -21,6 +21,16 @@ export function createSupabaseBrowserClient(): SupabaseClient | null {
     return null
   }
 
-  browserClient = createBrowserClient(env.url, env.publishableKey)
+  browserClient = createBrowserClient(env.url, env.publishableKey, {
+    auth: {
+      // Password and recovery auth requests use short-lived PKCE codes. The
+      // invitation email is verified server-side with a one-time token_hash;
+      // do not fall back to the implicit flow for browser auth.
+      flowType: 'pkce',
+      detectSessionInUrl: true,
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  })
   return browserClient
 }

@@ -7,8 +7,10 @@ const publicPaths = new Set([
   '/splash',
   '/login',
   '/forgot-password',
-  '/forgot-pin',
   '/reset-password',
+  '/access-denied',
+  '/auth/callback',
+  '/auth/confirm',
 ])
 
 function isPublicPath(pathname: string) {
@@ -49,7 +51,13 @@ export async function updateSupabaseSession(request: NextRequest) {
   }
 
   if (user && (pathname === '/login' || pathname === '/splash')) {
-    return NextResponse.redirect(new URL('/pin', request.url))
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  // The former local PIN screen is not a security boundary. Authenticated
+  // users go straight to the ERP; unauthenticated users use the login guard.
+  if (user && (pathname === '/pin' || pathname === '/forgot-pin')) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   return response

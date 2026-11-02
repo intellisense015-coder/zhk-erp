@@ -9,8 +9,13 @@ gates below pass.
 - `.env` is ignored by Git and is not tracked.
 - The application source contains no service-role key reference.
 - The publishable key is the only key permitted in `NEXT_PUBLIC_*` variables.
-- Supabase Auth establishes the session used for database access. The six-digit
-  PIN is an additional local UI gate only; it is not treated as authorization.
+- Supabase Auth establishes the session used for database access and is the
+  only application access boundary. The former six-digit local PIN gate has
+  been removed because it was not verified by Supabase and could not provide
+  meaningful security.
+- Microsoft Authenticator TOTP is now required before onboarding, ERP reads,
+  or ERP mutations. The database enforcement migration checks the signed
+  Supabase `aal2` claim; browser routing is only a second layer.
 - The initial migration enables RLS and allows direct member reads only. Direct
   table writes are intentionally withheld until authenticated server/RPC
   mutations are implemented.
@@ -58,7 +63,10 @@ gates below pass.
 - The in-process device-catalog limiter is defense-in-depth only. Before a
   multi-instance production launch, replace it with a shared provider such as
   Vercel WAF or Upstash Redis and test limits across instances.
-- Sales, expenses, supplier/customer mutations, capital, exchanges, and
-  transfers still need secure RPCs before those workflows are production-ready.
-- Business profile/settings persistence and local-data import still need a
-  server-side data-access path.
+- Transfer recording now uses a secure workspace-scoped RPC with role checks,
+  product locking, bounded inputs, and audit logging. A transfer records movement
+  between named entities without changing total stock because the current schema
+  has no per-entity inventory ledger.
+- Business profile/settings persistence now uses an owner-only Supabase RPC with
+  validation and audit logging. Local storage remains a cache for display and
+  offline fallback; local-data import still needs a server-side data-access path.

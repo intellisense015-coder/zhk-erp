@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  ArrowRightLeft,
   BarChart3,
   Bell,
   Boxes,
@@ -32,6 +33,7 @@ export interface NavSubItem {
   label: string;
   href: string;
   icon?: LucideIcon;
+  permissionKey?: string;
 }
 
 export interface NavGroupItem {
@@ -39,6 +41,7 @@ export interface NavGroupItem {
   href?: string;
   icon: LucideIcon;
   items?: NavSubItem[];
+  permissionKey?: string;
 }
 
 export interface ResponsiveSidebarProps {
@@ -51,49 +54,60 @@ export interface ResponsiveSidebarProps {
   userName?: string;
   userRole?: string;
   appName?: string;
+  visiblePermissionKeys?: ReadonlySet<string>;
 }
 
 // Keep the navigation focused on inventory, sales, insights, operations, and entities.
 const DEFAULT_NAV_GROUPS: NavGroupItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "POS", href: "/pos", icon: ShoppingCart },
-  { label: "Inventory", href: "/inventory", icon: Boxes },
-  { label: "Sales", href: "/sales", icon: ShoppingCart },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, permissionKey: "dashboard" },
+  { label: "POS", href: "/pos", icon: ShoppingCart, permissionKey: "pos" },
+  { label: "Inventory", href: "/inventory", icon: Boxes, permissionKey: "inventory" },
+  { label: "Sales", href: "/sales", icon: ShoppingCart, permissionKey: "sales" },
   {
     label: "Insights",
     icon: BarChart3,
     items: [
-      { label: "Reports", href: "/reports", icon: BarChart3 },
-      { label: "Transactions", href: "/transactions", icon: ClipboardList },
+      { label: "Reports", href: "/reports", icon: BarChart3, permissionKey: "reports" },
+      { label: "Transactions", href: "/transactions", icon: ClipboardList, permissionKey: "transactions" },
     ],
   },
   {
     label: "Operations",
     icon: PackagePlus,
     items: [
-      { label: "Purchases", href: "/purchases", icon: Receipt },
-      { label: "Low stock", href: "/low-stock", icon: Bell },
-      { label: "Settings", href: "/settings", icon: Settings2 },
+      { label: "Purchases", href: "/purchases", icon: Receipt, permissionKey: "purchases" },
+      { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, permissionKey: "transfers" },
+      { label: "Low stock", href: "/low-stock", icon: Bell, permissionKey: "inventory" },
+      { label: "Settings", href: "/settings", icon: Settings2, permissionKey: "settings" },
     ],
   },
   {
     label: "Finance",
     icon: CircleDollarSign,
     items: [
-      { label: "Expenses", href: "/expenses", icon: ReceiptText },
-      { label: "Invoices", href: "/invoices", icon: FileText },
-      { label: "Capital", href: "/capital", icon: WalletCards },
+      { label: "Expenses", href: "/expenses", icon: ReceiptText, permissionKey: "expenses" },
+      { label: "Invoices", href: "/invoices", icon: FileText, permissionKey: "invoices" },
+      { label: "Capital", href: "/capital", icon: WalletCards, permissionKey: "capital" },
     ],
   },
   {
     label: "Entities",
     icon: Users,
     items: [
-      { label: "Customers", href: "/customers", icon: Users },
-      { label: "Suppliers", href: "/suppliers", icon: Building2 },
+      { label: "Customers", href: "/customers", icon: Users, permissionKey: "customers" },
+      { label: "Suppliers", href: "/suppliers", icon: Building2, permissionKey: "suppliers" },
     ],
   },
 ];
+
+function visibleNavigation(permissionKeys?: ReadonlySet<string>) {
+  if (!permissionKeys) return DEFAULT_NAV_GROUPS;
+  return DEFAULT_NAV_GROUPS.flatMap((group) => {
+    if (group.href) return !group.permissionKey || permissionKeys.has(group.permissionKey) ? [group] : [];
+    const items = group.items?.filter((item) => !item.permissionKey || permissionKeys.has(item.permissionKey));
+    return items?.length ? [{ ...group, items }] : [];
+  });
+}
 
 const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(" ");
 
@@ -139,6 +153,7 @@ export function OsSidebar({
   onMobileOpenChange,
   onCollapsedChange,
   appName = "Solexa",
+  visiblePermissionKeys,
 }: ResponsiveSidebarProps) {
   const pathname = usePathname() || currentPath || "/dashboard";
   const router = useRouter();
@@ -146,6 +161,7 @@ export function OsSidebar({
   const [internalMobileOpen, setInternalMobileOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const drawerOpen = mobileOpen || internalMobileOpen;
+  const navigation = visibleNavigation(visiblePermissionKeys);
 
   const setSidebarCollapsed = (value: boolean) => {
     setCollapsed(value);
@@ -205,7 +221,7 @@ export function OsSidebar({
   const desktopNavigation = (
     <nav className="sidebar-nav custom-scrollbar" aria-label="Workspace navigation">
       <div className={cn("nav-group-list", collapsed && "is-collapsed-list")}>
-        {DEFAULT_NAV_GROUPS.map((group) => {
+        {navigation.map((group) => {
           const GroupIcon = group.icon;
           const groupActive = group.href
             ? isRouteActive(pathname, group.href)
@@ -268,10 +284,10 @@ export function OsSidebar({
   const mobileNavigation = (
     <nav className="mobile-nav custom-scrollbar" aria-label="Workspace navigation">
       <div className="mobile-nav-groups">
-        {DEFAULT_NAV_GROUPS.map((group) => (
+        {navigation.map((group) => (
           <section key={group.label} className="mobile-group-node">
             <p className="mobile-nav-group-label">{group.label}</p>
-            {(group.items ?? [{ label: group.label, href: group.href!, icon: group.icon }]).map((item) => {
+            {(group.items ?? [{ label: group.label, href: group.href!, icon: group.icon, permissionKey: group.permissionKey }]).map((item) => {
               const Icon = item.icon;
               return (
                 <button

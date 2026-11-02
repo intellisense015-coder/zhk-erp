@@ -66,6 +66,7 @@ export function PosWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [exchangeSubmitting, setExchangeSubmitting] = useState(false);
 
   const availableCategories = useMemo(() => Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort((left, right) => left.localeCompare(right)), [products]);
   const activeCategory = category === "All categories" || availableCategories.includes(category) ? category : "All categories";
@@ -104,6 +105,14 @@ export function PosWorkspace() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [products, givenProductId, receivedProductId]);
+
+  useEffect(() => {
+    if (!hydrated || customerId) return;
+    const timer = window.setTimeout(() => {
+      setCustomerCode((current) => current && !customers.some((customer) => customer.code === current) ? current : nextCustomerCode(customers));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [customers, customerId, hydrated]);
 
   const resetCustomer = () => {
     setCustomerId("");
@@ -164,6 +173,16 @@ export function PosWorkspace() {
     if (mode === "exchange") selectReceivedProduct(product.id);
   };
 
+  const changeMode = (nextMode: PosMode) => {
+    if (exchangeSubmitting || nextMode === mode) return;
+    setMode(nextMode);
+    setCart([]);
+    setOrderDiscount("0");
+    setCheckoutOpen(false);
+    setError(null);
+    setSuccess(null);
+  };
+
   const submitSale = async () => {
     if (!cart.length) { setError("Add at least one in-stock product to the order."); return; }
     if (cart.some((item) => !Number.isFinite(item.unitSellingPrice) || item.unitSellingPrice <= 0)) { setError("Every product must have a selling price greater than zero."); return; }
@@ -176,7 +195,8 @@ export function PosWorkspace() {
     setCheckoutOpen(false);
   };
 
-  const submitExchange = () => {
+  const submitExchange = async () => {
+    if (exchangeSubmitting) return;
     const values: ExchangeFormValues = {
       mode: mode as "exchange" | "buyback",
       customerId: customerId || undefined,
@@ -197,10 +217,18 @@ export function PosWorkspace() {
       supplierUnitCost: Number(supplierUnitCost),
       supplierPaidAmount: Number(supplierPaidAmount),
     };
-    const result = addExchange(values);
-    if (!result.ok) { setError(result.message); setSuccess(null); return; }
-    setError(null);
-    setSuccess(mode === "buyback" ? "Buyback recorded and phone added to inventory." : "Exchange completed and inventory updated.");
+    setExchangeSubmitting(true);
+    try {
+      const result = await addExchange(values);
+      if (!result.ok) { setError(result.message); setSuccess(null); return; }
+      setError(null);
+      setSuccess(mode === "buyback" ? "Buyback recorded and phone added to inventory." : "Exchange completed and inventory updated.");
+    } catch {
+      setError("We could not record this exchange.");
+      setSuccess(null);
+    } finally {
+      setExchangeSubmitting(false);
+    }
   };
 
   const customerOptions = [<option key="new-customer" value="__new_customer__">+ New customer</option>, ...customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)];
@@ -208,6 +236,9 @@ export function PosWorkspace() {
   return <div className="erp-content pos-page">
     <div className="erp-page-heading"><div><p className="erp-eyebrow">Counter workspace</p><h1 className="erp-page-title">Point of Sale</h1><p className="erp-page-subtitle">Complete sales and customer buybacks from one screen.</p></div></div>
     <div className="pos-mode-search-row">
+      <div className="pos-mode-tabs" role="tablist" aria-label="POS transaction type">
+        {([ ["sale", "Sale"], ["exchange", "Exchange"], ["buyback", "Buyback"] ] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={mode === value} className={mode === value ? "is-active" : ""} onClick={() => changeMode(value)}>{label}</button>)}
+      </div>
     </div>
     <div className="pos-layout">
       <section className="pos-catalog-panel">
@@ -222,7 +253,7 @@ export function PosWorkspace() {
           {mode === "sale" ? <SaleOrder cart={cart} products={products} onRemove={removeFromCart} onPriceChange={changePrice} /> : <TradeInOrder mode={mode} products={products} suppliers={suppliers} givenProductId={givenProductId} givenQuantity={givenQuantity} tradeInUnitValue={tradeInUnitValue} receivedProductId={receivedProductId} receivedQuantity={receivedQuantity} receivedUnitSellingPrice={receivedUnitSellingPrice} receiveSource={receiveSource} supplierId={supplierId} supplierName={supplierName} supplierContactNumber={supplierContactNumber} supplierCompany={supplierCompany} supplierUnitCost={supplierUnitCost} supplierPaidAmount={supplierPaidAmount} onGivenProduct={selectGivenProduct} onGivenQuantity={setGivenQuantity} onTradeInValue={setTradeInUnitValue} onReceivedProduct={selectReceivedProduct} onReceivedQuantity={setReceivedQuantity} onSellingPrice={setReceivedUnitSellingPrice} onReceiveSource={setReceiveSource} onSupplier={setSupplierId} onSupplierName={setSupplierName} onSupplierContact={setSupplierContactNumber} onSupplierCompany={setSupplierCompany} onSupplierCost={setSupplierUnitCost} onSupplierPaid={setSupplierPaidAmount} />}
         </div>
         <Notification message={success ?? error} variant={error ? "error" : "success"} onDismiss={() => { setError(null); setSuccess(null); }} />
-        <div className="pos-order-footer">{mode === "sale" ? <><div className="pos-total-row"><span>Subtotal</span><strong>{formatCurrency(cartSubtotal)}</strong></div><div className="pos-total-row pos-discount-summary"><label htmlFor="pos-order-discount">Discount</label><input id="pos-order-discount" type="number" min={0} max={cartSubtotal} value={orderDiscount} onChange={(event) => setOrderDiscount(event.target.value)} aria-label="Order discount" /></div><div className="pos-total-row pos-grand-total"><span>Total</span><strong>{formatCurrency(cartTotal)}</strong></div><Button variant="brand" className="pos-complete-button" disabled={!hydrated || !cart.length} onClick={() => { setError(null); setCheckoutOpen(true); }}><WalletCards size={16} />Complete sale</Button></> : <><div className="pos-total-row"><span>{mode === "buyback" ? "Customer payout" : exchangeBalance >= 0 ? "Customer pays" : "Customer credit"}</span><strong>{formatCurrency(mode === "buyback" ? tradeInTotal : Math.abs(exchangeBalance))}</strong></div><Button variant="brand" className="pos-complete-button" disabled={!hydrated} onClick={submitExchange}>{mode === "buyback" ? "Record buyback" : "Complete exchange"}</Button></>}</div>
+        <div className="pos-order-footer">{mode === "sale" ? <><div className="pos-total-row"><span>Subtotal</span><strong>{formatCurrency(cartSubtotal)}</strong></div><div className="pos-total-row pos-discount-summary"><label htmlFor="pos-order-discount">Discount</label><input id="pos-order-discount" type="number" min={0} max={cartSubtotal} value={orderDiscount} onChange={(event) => setOrderDiscount(event.target.value)} aria-label="Order discount" /></div><div className="pos-total-row pos-grand-total"><span>Total</span><strong>{formatCurrency(cartTotal)}</strong></div><Button variant="brand" className="pos-complete-button" disabled={!hydrated || !cart.length} onClick={() => { setError(null); setCheckoutOpen(true); }}><WalletCards size={16} />Complete sale</Button></> : <><div className="pos-total-row"><span>{mode === "buyback" ? "Customer payout" : exchangeBalance >= 0 ? "Customer pays" : "Customer credit"}</span><strong>{formatCurrency(mode === "buyback" ? tradeInTotal : Math.abs(exchangeBalance))}</strong></div><Button variant="brand" className="pos-complete-button" disabled={!hydrated || exchangeSubmitting} onClick={submitExchange}>{exchangeSubmitting ? "Saving..." : mode === "buyback" ? "Record buyback" : "Complete exchange"}</Button></>}</div>
       </aside>
     <Modal open={checkoutOpen} title="Confirm sale" description="Review the order before updating inventory and recording the transaction." onClose={() => setCheckoutOpen(false)}><div className="pos-confirmation"><div className="pos-confirmation-items">{discountedCart.map((item) => { const product = products.find((entry) => entry.id === item.productId); return <div key={item.productId}><span>{product?.name ?? "Product"} × {item.quantity}</span><strong>{formatCurrency(item.quantity * item.unitSellingPrice - item.discount)}</strong></div>; })}</div><div className="pos-confirmation-total"><span>{customerName || "Customer"}</span><strong>{formatCurrency(cartTotal)}</strong></div><div className="primitive-dialog-actions px-0 pb-0"><Button type="button" variant="secondary" onClick={() => setCheckoutOpen(false)}>Cancel</Button><Button type="button" variant="brand" onClick={submitSale}><Check size={15} />Confirm sale</Button></div></div></Modal>
   </div>;

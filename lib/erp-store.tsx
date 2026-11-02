@@ -12,6 +12,9 @@ import { isSupabaseConfigured } from "./supabase/config";
 // cannot reappear as real business data. Records created in this version persist
 // under this namespace across reloads.
 const STORAGE_KEY = "solexa-erp-data-v2";
+function storageKey(workspaceId?: string | null) {
+  return workspaceId && isSupabaseConfigured() ? `${STORAGE_KEY}:${workspaceId}` : STORAGE_KEY;
+}
 type StoreData = { products: Product[]; transactions: Transaction[]; customers: Customer[]; suppliers: Supplier[]; supplierPayments: SupplierPayment[]; expenses: Expense[]; expenseCategories: string[]; capitalAccounts: CapitalAccount[]; capitalEntries: CapitalEntry[] };
 type ExpenseFormValues = Omit<Expense, "id" | "date" | "month" | "createdAt">;
 type StoreResult = { ok: true } | { ok: false; message: string };
@@ -27,9 +30,9 @@ type StoreContextValue = StoreData & {
   updateSupplier: (id: string, values: { name: string; contactNumber: string; company?: string; cnicNumber?: string; openingBalance?: number }) => Promise<StoreResult>;
   deleteSupplier: (id: string) => Promise<StoreResult>;
   addPurchase: (values: PurchaseFormValues) => Promise<{ ok: true } | { ok: false; message: string }>;
-  updatePurchase: (id: string, values: { quantity: number; unitCost: number }) => { ok: true } | { ok: false; message: string };
+  updatePurchase: (id: string, values: { quantity: number; unitCost: number }) => Promise<StoreResult>;
   addSale: (values: SaleFormValues) => Promise<StoreResult>;
-  addExchange: (values: ExchangeFormValues) => { ok: true } | { ok: false; message: string };
+  addExchange: (values: ExchangeFormValues) => Promise<StoreResult>;
   addSupplierPayment: (values: { supplierId: string; amount: number; note?: string; capitalId?: string }) => Promise<StoreResult>;
   addExpense: (values: ExpenseFormValues) => Promise<StoreResult>;
   addExpenseCategory: (name: string) => Promise<StoreResult>;
@@ -37,26 +40,18 @@ type StoreContextValue = StoreData & {
   deleteExpense: (id: string) => Promise<StoreResult>;
   addCapitalAccount: (values: { name: string; ownerName?: string; amount: number; note?: string }) => Promise<StoreResult>;
   addCapitalEntry: (values: { capitalId: string; type: "contribution" | "withdrawal"; amount: number; note?: string }) => Promise<StoreResult>;
-  addTransfer: (values: { transferKind: "supplier-to-customer" | "customer-to-customer"; fromEntity: string; toEntity: string; productId: string; quantity: number; amount: number }) => { ok: true } | { ok: false; message: string };
-  updateSale: (id: string, values: { customerName: string; items: SaleLineItem[] }) => { ok: true } | { ok: false; message: string };
+  addTransfer: (values: { transferKind: "supplier-to-customer" | "customer-to-customer"; fromEntity: string; toEntity: string; productId: string; quantity: number; amount: number }) => Promise<StoreResult>;
+  updateSale: (id: string, values: { customerName: string; items: SaleLineItem[] }) => Promise<StoreResult>;
 };
 
 const emptyStore: StoreData = { products: [], transactions: [], customers: [], suppliers: [], supplierPayments: [], expenses: [], expenseCategories: defaultExpenseCategories, capitalAccounts: [], capitalEntries: [] };
 const StoreContext = createContext<StoreContextValue | null>(null);
 
-function hasStoredRecords(store: StoreData) {
-  return store.products.length > 0
-    || store.transactions.length > 0
-    || store.customers.length > 0
-    || store.suppliers.length > 0
-    || store.supplierPayments.length > 0
-    || store.expenses.length > 0
-    || store.capitalAccounts.length > 0
-    || store.capitalEntries.length > 0;
-}
-
 function readableRpcError(message: string, fallback: string) {
   const cleaned = message.replace(/^.*?ERROR:\s*/i, "").trim();
+  if (/column reference|relation .* does not exist|function .* does not exist|permission denied|syntax error/i.test(cleaned)) {
+    return fallback;
+  }
   return cleaned.length > 0 && cleaned.length <= 180 ? cleaned : fallback;
 }
 
@@ -94,10 +89,13 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     let active = true;
     const timer = window.setTimeout(async () => {
       let localData = emptyStore;
-      try {
-        const stored = window.localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored) as Partial<StoreData>;
+      const configured = isSupabaseConfigured();
+      const workspaceId = configured ? window.localStorage.getItem("solexa-workspace-id") : null;
+      if (!configured) {
+        try {
+          const stored = window.localStorage.getItem(storageKey(workspaceId));
+          if (stored) {
+            const parsed = JSON.parse(stored) as Partial<StoreData>;
           const products = Array.isArray(parsed.products) ? parsed.products.map((product) => { const normalized = { ...product, brand: product.brand ?? "other", model: product.model ?? product.name, color: product.color?.trim() || "Unspecified", vendorName: product.vendorName ?? "Unassigned" }; return { ...normalized, name: normalizeProductName(normalized) }; }) : [];
           const customers = Array.isArray(parsed.customers) ? (parsed.customers as Array<Customer & { accountNumber?: string }>).map((customer, index, source) => ({ ...customer, code: makeUniqueCustomerCode(customer.code ?? customer.accountNumber ?? `CUST-${String(index + 1).padStart(3, "0")}`, source.slice(0, index).map((item) => ({ ...item, code: item.code ?? item.accountNumber ?? "" })) as Customer[]) })) : [];
           const parsedSuppliers = Array.isArray(parsed.suppliers) ? (parsed.suppliers as Array<Partial<Supplier>>).map((supplier) => ({ id: supplier.id ?? makeId("supplier"), name: supplier.name ?? "Unnamed supplier", contactNumber: supplier.contactNumber ?? "", company: supplier.company ?? "", cnicNumber: supplier.cnicNumber ?? "", openingBalance: typeof supplier.openingBalance === "number" && Number.isFinite(supplier.openingBalance) ? Math.max(supplier.openingBalance, 0) : 0, createdAt: supplier.createdAt ?? new Date().toISOString() })) : [];
@@ -136,22 +134,20 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           const capitalAccounts = Array.isArray(parsed.capitalAccounts) ? parsed.capitalAccounts : [];
           const capitalEntries = Array.isArray(parsed.capitalEntries) ? parsed.capitalEntries : [];
           const nextData = { products, transactions: nextTransactions, customers, suppliers, supplierPayments: Array.isArray(parsed.supplierPayments) ? parsed.supplierPayments : [], expenses, expenseCategories, capitalAccounts, capitalEntries };
-          localData = nextData;
+            localData = nextData;
+          }
+        } catch {
+          window.localStorage.removeItem(storageKey(workspaceId));
         }
-      } catch {
-        window.localStorage.removeItem(STORAGE_KEY);
       }
 
       let nextData = localData;
-      if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+      if (configured) {
         const supabase = createSupabaseBrowserClient();
         if (workspaceId && supabase) {
           const remote = await loadSupabaseStoreData(supabase, workspaceId);
-          if (remote.data && (hasStoredRecords(remote.data) || !hasStoredRecords(localData))) {
-            nextData = remote.data;
-            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remote.data));
-          }
+          nextData = remote.data ?? emptyStore;
+          if (remote.data) window.localStorage.setItem(storageKey(workspaceId), JSON.stringify(remote.data));
         }
       }
 
@@ -164,7 +160,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
 
   const commit = (next: StoreData) => {
     setData(next);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    window.localStorage.setItem(storageKey(window.localStorage.getItem("solexa-workspace-id")), JSON.stringify(next));
   };
 
   const normalizeContact = (value: string) => value.replace(/\D/g, "");
@@ -188,7 +184,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     const remote = await loadSupabaseStoreData(supabase, workspaceId);
     if (!remote.data) return { ok: false, message: readableRpcError(remote.error ?? "", "The workspace was saved, but inventory could not be refreshed.") };
     setData(remote.data);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remote.data));
+    window.localStorage.setItem(storageKey(workspaceId), JSON.stringify(remote.data));
     return { ok: true };
   }, []);
 
@@ -482,8 +478,8 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ products: data.products.map((item) => item.id === product.id ? { ...item, inStockQuantity: item.inStockQuantity + values.quantity, received: item.received + values.quantity, costPrice: values.unitCost } : item), transactions: [transaction, ...data.transactions], customers: data.customers, suppliers: nextSuppliers, supplierPayments: payment ? [payment, ...data.supplierPayments] : data.supplierPayments, expenses: data.expenses, expenseCategories: data.expenseCategories, capitalAccounts: data.capitalAccounts, capitalEntries: data.capitalEntries });
       return { ok: true };
     },
-    updatePurchase: (id, values) => {
-      if (!Number.isInteger(values.quantity) || values.quantity <= 0 || values.unitCost <= 0) return { ok: false, message: "Quantity and unit cost must be greater than zero." };
+    updatePurchase: async (id, values) => {
+      if (!Number.isInteger(values.quantity) || values.quantity <= 0 || !Number.isFinite(values.unitCost) || values.unitCost <= 0) return { ok: false, message: "Quantity and unit cost must be greater than zero." };
       const purchase = data.transactions.find((transaction) => transaction.id === id && transaction.type === "purchase");
       if (!purchase) return { ok: false, message: "Purchase record not found." };
       const product = data.products.find((item) => item.id === purchase.productId || item.name === purchase.name);
@@ -493,6 +489,18 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (previousPaid > total) return { ok: false, message: "Purchase total cannot be lower than the amount already paid." };
       const quantityDelta = values.quantity - purchase.quantity;
       if (product.inStockQuantity + quantityDelta < 0) return { ok: false, message: "The edited purchase would make stock negative." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("update_purchase", {
+          target_workspace_id: workspaceId,
+          target_purchase_id: id,
+          purchase_payload: { quantity: values.quantity, unit_cost: values.unitCost },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this purchase.") };
+        return refreshRemoteStore();
+      }
       const updated: Transaction = { ...purchase, quantity: values.quantity, unitCost: values.unitCost, amount: total, outstandingAmount: total - previousPaid };
       commit({ ...data, products: data.products.map((item) => item.id === product.id ? { ...item, inStockQuantity: item.inStockQuantity + quantityDelta, received: item.received + quantityDelta, costPrice: values.unitCost } : item), transactions: data.transactions.map((transaction) => transaction.id === id ? updated : transaction) });
       return { ok: true };
@@ -622,6 +630,9 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     addSale: async (values) => {
       if (values.items.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.unitSellingPrice) || item.unitSellingPrice <= 0 || item.discount < 0)) return { ok: false, message: "Quantity, selling price, and discount values must be valid." };
       if (isSupabaseConfigured()) {
+        const requestedCustomerCode = normalizeCode(values.customerCode) || `CUST-${String(data.customers.length + 1).padStart(3, "0")}`;
+        const selectedCustomer = values.customerId ? data.customers.find((customer) => customer.id === values.customerId) : undefined;
+        const safeCustomerCode = makeUniqueCustomerCode(requestedCustomerCode, data.customers, selectedCustomer?.id);
         const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
@@ -631,7 +642,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
             customer_id: values.customerId ?? null,
             customer_name: values.customerName,
             customer_contact_number: values.customerContactNumber,
-            customer_code: values.customerCode,
+            customer_code: safeCustomerCode,
             items: values.items.map((item) => ({
               product_id: item.productId,
               quantity: item.quantity,
@@ -671,13 +682,15 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ products: data.products.map((product) => { const sold = items.find((item) => item.productId === product.id); return sold ? { ...product, inStockQuantity: product.inStockQuantity - sold.quantity, sold: product.sold + sold.quantity } : product; }), transactions: [transaction, ...data.transactions], customers: data.customers.some((item) => item.id === customer.id) ? data.customers.map((item) => item.id === customer.id ? customer : item) : [customer, ...data.customers], suppliers: data.suppliers, supplierPayments: data.supplierPayments, expenses: data.expenses, expenseCategories: data.expenseCategories, capitalAccounts: data.capitalAccounts, capitalEntries: data.capitalEntries });
       return { ok: true };
     },
-    addExchange: (values) => {
+    addExchange: async (values) => {
       const givenProduct = data.products.find((product) => product.id === values.givenProductId);
       const isBuyback = values.mode === "buyback";
       const receivedProduct = values.receivedProductId ? data.products.find((product) => product.id === values.receivedProductId) : undefined;
       const receivedQuantity = values.receivedQuantity ?? 0;
       const receivedUnitSellingPrice = values.receivedUnitSellingPrice ?? 0;
       const receiveSource = values.receiveSource ?? "inventory";
+      if (values.mode !== "exchange" && values.mode !== "buyback") return { ok: false, message: "Choose a valid exchange operation." };
+      if (!Number.isFinite(values.givenQuantity) || !Number.isFinite(values.tradeInUnitValue) || (!isBuyback && (!Number.isFinite(receivedQuantity) || !Number.isFinite(receivedUnitSellingPrice))) || (!isBuyback && receiveSource === "supplier" && (!Number.isFinite(values.supplierUnitCost) || !Number.isFinite(values.supplierPaidAmount)))) return { ok: false, message: "Exchange values must be valid numbers." };
       if (!givenProduct) return { ok: false, message: "Choose the phone received from the customer." };
       if (!isBuyback && !receivedProduct) return { ok: false, message: "Choose the replacement phone sold to the customer." };
       if (!isBuyback && givenProduct.id === receivedProduct?.id) return { ok: false, message: "The trade-in and replacement phone must be different products." };
@@ -718,6 +731,37 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         supplier = existingSupplier ? { ...existingSupplier, name: supplierName, contactNumber: supplierContact, company: supplierCompany } : { id: makeId("supplier"), name: supplierName, contactNumber: supplierContact, company: supplierCompany, createdAt: new Date().toISOString() };
         purchaseTransaction = { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), source: "supplier", exchangeId, name: receivedProduct.name, productId: receivedProduct.id, unitCost: values.supplierUnitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: receivedQuantity, amount: supplierTotal, paidAmount: values.supplierPaidAmount, outstandingAmount: supplierTotal - values.supplierPaidAmount, time: "Just now", createdAt: new Date().toISOString(), date, month };
         purchasePayment = values.supplierPaidAmount > 0 ? { id: makeId("payment"), supplierId: supplier.id, amount: values.supplierPaidAmount, note: "Paid with exchange arrangement", date, time: "Just now", createdAt: new Date().toISOString() } : null;
+      }
+
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("record_exchange", {
+          target_workspace_id: workspaceId,
+          exchange_payload: {
+            mode: values.mode,
+            customer_id: values.customerId ?? null,
+            customer_name: values.customerName.trim(),
+            customer_contact_number: contactNumber,
+            customer_code: customer.code,
+            given_product_id: values.givenProductId,
+            given_quantity: values.givenQuantity,
+            trade_in_unit_value: values.tradeInUnitValue,
+            received_product_id: values.receivedProductId ?? null,
+            received_quantity: values.receivedQuantity ?? null,
+            received_unit_selling_price: values.receivedUnitSellingPrice ?? null,
+            receive_source: values.receiveSource ?? "inventory",
+            supplier_id: values.supplierId || (supplier && data.suppliers.some((supplierRecord) => supplierRecord.id === supplier.id) ? supplier.id : null),
+            supplier_name: values.supplierName.trim(),
+            supplier_contact_number: normalizeContact(values.supplierContactNumber),
+            supplier_company: values.supplierCompany?.trim() ?? "",
+            supplier_unit_cost: values.supplierUnitCost,
+            supplier_paid_amount: values.supplierPaidAmount,
+          },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this exchange.") };
+        return refreshRemoteStore();
       }
 
       const tradeInTotal = values.givenQuantity * values.tradeInUnitValue;
@@ -762,20 +806,40 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ ...data, supplierPayments: [payment, ...data.supplierPayments] });
       return { ok: true };
     },
-    addTransfer: (values) => {
+    addTransfer: async (values) => {
       const product = data.products.find((item) => item.id === values.productId);
       if (!product) return { ok: false, message: "Choose a product for the transfer." };
       if (!Number.isInteger(values.quantity) || values.quantity <= 0) return { ok: false, message: "Transfer quantity must be greater than zero." };
       if (values.quantity > product.inStockQuantity) return { ok: false, message: `${product.name} only has ${product.inStockQuantity} units available.` };
       if (!values.fromEntity.trim() || !values.toEntity.trim() || values.fromEntity.trim().toLowerCase() === values.toEntity.trim().toLowerCase()) return { ok: false, message: "Choose two different entities." };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("record_transfer", {
+          target_workspace_id: workspaceId,
+          transfer_payload: {
+            transfer_kind: values.transferKind,
+            from_entity: values.fromEntity.trim(),
+            to_entity: values.toEntity.trim(),
+            product_id: values.productId,
+            quantity: values.quantity,
+            amount: values.amount,
+          },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this transfer.") };
+        return refreshRemoteStore();
+      }
       const { date, month } = getDateParts();
       const transaction: Transaction = { id: makeId("transfer"), type: "transfer", name: product.name, productId: product.id, party: `${values.fromEntity.trim()} → ${values.toEntity.trim()}`, quantity: values.quantity, amount: values.amount, fromEntity: values.fromEntity.trim(), toEntity: values.toEntity.trim(), transferKind: values.transferKind, time: "Just now", createdAt: new Date().toISOString(), date, month };
       commit({ ...data, transactions: [transaction, ...data.transactions] });
       return { ok: true };
     },
-    updateSale: (id, values) => {
+    updateSale: async (id, values) => {
       const sale = data.transactions.find((transaction) => transaction.id === id && transaction.type === "sale");
-      if (!sale || !sale.items?.length) return { ok: false, message: "This sale cannot be edited because its line items are unavailable." };
+      if (!sale || !sale.items?.length || !values.items.length) return { ok: false, message: "This sale cannot be edited because its line items are unavailable." };
+      if (sale.source === "exchange" || sale.exchangeId || sale.tradeInCredit !== undefined || sale.amountDue !== undefined) return { ok: false, message: "Exchange-linked sales must be edited through the exchange operation." };
+      if (!values.customerName.trim() || values.customerName.trim().length > 200) return { ok: false, message: "Customer name is required and must be 200 characters or less." };
       if (values.items.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0 || item.unitSellingPrice <= 0 || item.discount < 0)) return { ok: false, message: "Quantity and selling price must be greater than zero." };
       if (values.items.some((item) => item.discount > item.quantity * item.unitSellingPrice)) return { ok: false, message: "Discount cannot exceed a line subtotal." };
       const previousItems = sale.items ?? [];
@@ -796,6 +860,21 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         return product && product.inStockQuantity + previousQuantity - nextQuantity < 0 ? `${product.name} does not have enough stock for this edit.` : null;
       }).find(Boolean);
       if (stockIssue) return { ok: false, message: stockIssue };
+      if (isSupabaseConfigured()) {
+        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("update_sale", {
+          target_workspace_id: workspaceId,
+          target_sale_id: id,
+          sale_payload: {
+            customer_name: values.customerName.trim(),
+            items: values.items.map((item) => ({ product_id: item.productId, quantity: item.quantity, unit_selling_price: item.unitSellingPrice, discount: item.discount })),
+          },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this sale.") };
+        return refreshRemoteStore();
+      }
       const nextProducts = data.products.map((product) => {
         const previousQuantity = previousItems.find((item) => item.productId === product.id)?.quantity ?? 0;
         const nextQuantity = nextItems.find((item) => item.productId === product.id)?.quantity ?? 0;

@@ -39,6 +39,11 @@ export const purchaseSchema = z.object({
   fundingSource: z.enum(["capital", "supplier-credit", "other"]).optional(),
 });
 
+export const purchaseEditSchema = z.object({
+  quantity: z.number().int("Quantity must be a whole number").positive("Must be greater than 0"),
+  unitCost: z.number().positive("Must be greater than 0"),
+});
+
 export const saleLineItemSchema = z.object({
   productId: requiredText("Product"),
   quantity: positiveNumber,
@@ -61,6 +66,7 @@ export const loginSchema = z.object({
 
 export type ProductFormValues = z.infer<typeof productSchema>;
 export type PurchaseFormValues = z.infer<typeof purchaseSchema>;
+export type PurchaseEditFormValues = z.infer<typeof purchaseEditSchema>;
 export type SaleFormValues = z.infer<typeof saleSchema>;
 export type SaleLineItemFormValues = z.infer<typeof saleLineItemSchema>;
 export type ExchangeFormValues = {

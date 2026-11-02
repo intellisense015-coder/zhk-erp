@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Building2, CheckCircle2, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, CheckCircle2, LogOut, UserRound } from "lucide-react";
 import { motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
@@ -43,6 +43,8 @@ export default function OnboardingPage() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [checkingMembership, setCheckingMembership] = useState(true);
 
   useEffect(() => {
     const profile = readBusinessProfile();
@@ -61,6 +63,78 @@ export default function OnboardingPage() {
 
     return () => window.cancelAnimationFrame(frame);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const resolveExistingWorkspace = async () => {
+      const supabase = createSupabaseBrowserClient();
+      if (!supabase) {
+        if (active) setCheckingMembership(false);
+        return;
+      }
+
+      const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (assuranceError) {
+        router.replace("/login");
+        return;
+      }
+      if (assurance.currentLevel !== "aal2") {
+        router.replace("/mfa");
+        return;
+      }
+
+      const { data: memberships, error: membershipError } = await supabase
+        .from("workspace_members")
+        .select("workspace_id")
+        .limit(1);
+
+      if (!active) return;
+      if (membershipError) {
+        setSubmitError("We could not check your workspace access. Please try again.");
+        setCheckingMembership(false);
+        return;
+      }
+
+      const workspaceId = memberships?.[0]?.workspace_id as string | undefined;
+      if (!workspaceId) {
+        setCheckingMembership(false);
+        return;
+      }
+
+      const { data: workspace, error: workspaceError } = await supabase
+        .from("workspaces")
+        .select("business_name, owner_first_name, owner_second_name, owner_email, owner_contact_number, owner_gender")
+        .eq("id", workspaceId)
+        .maybeSingle();
+
+      if (!active) return;
+      if (workspaceError || !workspace) {
+        setSubmitError("We could not load your workspace details. Please try again.");
+        setCheckingMembership(false);
+        return;
+      }
+
+      const profile: BusinessProfile = {
+        ...defaultBusinessProfile,
+        name: workspace.business_name,
+        businessName: workspace.business_name,
+        ownerFirstName: workspace.owner_first_name,
+        ownerSecondName: workspace.owner_second_name,
+        email: workspace.owner_email,
+        contactNumber: workspace.owner_contact_number,
+        gender: workspace.owner_gender,
+      };
+      window.localStorage.setItem(BUSINESS_PROFILE_STORAGE_KEY, JSON.stringify(profile));
+      window.localStorage.setItem("solexa-workspace-id", workspaceId);
+      router.replace("/dashboard");
+    };
+
+    void resolveExistingWorkspace();
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   const update = (field: keyof OnboardingDraft, value: string) => {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -95,6 +169,15 @@ export default function OnboardingPage() {
 
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
+  };
+
+  const signOutAndSwitchAccount = async () => {
+    setSigningOut(true);
+    const supabase = createSupabaseBrowserClient();
+    await supabase?.auth.signOut();
+    window.localStorage.removeItem(BUSINESS_PROFILE_STORAGE_KEY);
+    window.localStorage.removeItem("solexa-workspace-id");
+    router.replace("/login");
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -160,6 +243,19 @@ export default function OnboardingPage() {
     window.localStorage.setItem("solexa-workspace-id", workspaceId);
     window.setTimeout(() => router.replace("/dashboard"), 300);
   };
+
+  if (checkingMembership) {
+    return (
+      <main className={styles.page}>
+        <ThemeToggle />
+        <div className={styles.checkingCard} role="status" aria-live="polite">
+          <Building2 size={18} />
+          <strong>Checking workspace access…</strong>
+          <span>Verifying your secure membership.</span>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className={styles.page}>
@@ -303,6 +399,15 @@ export default function OnboardingPage() {
                 )}
               </Button>
             </div>
+            <button
+              type="button"
+              className={styles.signOutButton}
+              onClick={() => void signOutAndSwitchAccount()}
+              disabled={signingOut || saving}
+            >
+              <LogOut size={13} />
+              {signingOut ? "Signing out…" : "Sign out / switch account"}
+            </button>
           </form>
         </motion.section>
       </div>

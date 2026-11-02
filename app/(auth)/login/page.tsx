@@ -10,6 +10,11 @@ import { AuthInput, PasswordInput } from "../../../components/auth/auth-fields";
 import { loginSchema, type LoginFormValues } from "../../../lib/validations";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 
+function safeNextPath(value: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return "/dashboard";
+  return value;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [authError, setAuthError] = useState<string | null>(null);
@@ -28,8 +33,8 @@ export default function LoginPage() {
       return;
     }
 
-    window.localStorage.removeItem("solexa-pin-passed");
-    router.replace("/pin");
+    const nextPath = safeNextPath(new URL(window.location.href).searchParams.get("next"));
+    router.replace(nextPath);
   };
 
   return <>

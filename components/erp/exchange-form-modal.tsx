@@ -92,7 +92,7 @@ export function ExchangeFormModal({ open, onClose }: { open: boolean; onClose: (
     const supplier = suppliers.find((item) => item.id === id);
     if (supplier) setDraft((current) => ({ ...current, supplierId: supplier.id, supplierName: supplier.name, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company }));
   };
-  const submit = () => {
+  const submit = async () => {
     const values: ExchangeFormValues = {
       ...draft,
       givenQuantity: Number(draft.givenQuantity),
@@ -102,7 +102,7 @@ export function ExchangeFormModal({ open, onClose }: { open: boolean; onClose: (
       supplierUnitCost: Number(draft.supplierUnitCost),
       supplierPaidAmount: Number(draft.supplierPaidAmount),
     };
-    const result = addExchange(values);
+    const result = await addExchange(values);
     if (!result.ok) {
       setError(result.message);
       return;
