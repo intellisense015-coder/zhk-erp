@@ -12,7 +12,7 @@ import { useErpStore } from "../../lib/erp-store";
 import type { ExchangeFormValues, SaleFormValues } from "../../lib/validations";
 
 type PosMode = "sale" | "exchange" | "buyback";
-type CartLine = SaleFormValues["items"][number];
+type CartLine = Omit<SaleFormValues["items"][number], "unitSellingPrice"> & { unitSellingPrice: number | "" };
 
 function nextCustomerCode(customers: Array<{ code: string }>) {
   let index = customers.length + 1;
@@ -81,16 +81,17 @@ export function PosWorkspace() {
   const tradeInTotal = (Number(givenQuantity) || 0) * (Number(tradeInUnitValue) || 0);
   const replacementTotal = (Number(receivedQuantity) || 0) * (Number(receivedUnitSellingPrice) || 0);
   const exchangeBalance = replacementTotal - tradeInTotal;
-  const cartSubtotal = cart.reduce((sum, item) => sum + item.quantity * item.unitSellingPrice, 0);
+  const pricedCart = useMemo(() => cart.map((item) => ({ ...item, unitSellingPrice: Number(item.unitSellingPrice) })), [cart]);
+  const cartSubtotal = pricedCart.reduce((sum, item) => sum + item.quantity * item.unitSellingPrice, 0);
   const cartDiscount = Math.min(cartSubtotal, Math.max(0, Number(orderDiscount) || 0));
   const cartTotal = Math.max(0, cartSubtotal - cartDiscount);
   const discountedCart = useMemo(() => {
-    return cart.map((item) => {
+    return pricedCart.map((item) => {
       const lineSubtotal = item.quantity * item.unitSellingPrice;
       const lineDiscount = cartSubtotal > 0 ? cartDiscount * (lineSubtotal / cartSubtotal) : 0;
       return { ...item, discount: Math.min(lineSubtotal, lineDiscount) };
     });
-  }, [cart, cartDiscount, cartSubtotal]);
+  }, [cartDiscount, cartSubtotal, pricedCart]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -158,7 +159,12 @@ export function PosWorkspace() {
   };
 
   const changeQuantity = (product: Product, quantity: number) => setCart((current) => current.map((item) => item.productId === product.id ? { ...item, quantity: Math.max(1, Math.min(product.inStockQuantity, quantity)) } : item));
-  const changePrice = (product: Product, price: number) => setCart((current) => current.map((item) => item.productId === product.id ? { ...item, unitSellingPrice: Math.max(1, price || 0) } : item));
+  const changePrice = (product: Product, rawPrice: string) => setCart((current) => current.map((item) => {
+    if (item.productId !== product.id) return item;
+    if (rawPrice === "") return { ...item, unitSellingPrice: "" };
+    const price = Number(rawPrice);
+    return { ...item, unitSellingPrice: Number.isFinite(price) ? price : "" };
+  }));
   const removeFromCart = (productId: string) => setCart((current) => current.filter((item) => item.productId !== productId));
   const decreaseQuantity = (product: Product) => {
     const item = cart.find((entry) => entry.productId === product.id);
@@ -183,9 +189,24 @@ export function PosWorkspace() {
     setSuccess(null);
   };
 
+  const validateCustomer = () => {
+    if (!customerName.trim() || !customerContactNumber.trim()) {
+      setError("Add a customer name and contact number before completing the sale.");
+      setSuccess(null);
+      return false;
+    }
+    if (!/^[+()\d\s-]{7,}$/.test(customerContactNumber.trim())) {
+      setError("Enter a valid customer contact number before completing the sale.");
+      setSuccess(null);
+      return false;
+    }
+    return true;
+  };
+
   const submitSale = async () => {
+    if (!validateCustomer()) { setCheckoutOpen(false); return; }
     if (!cart.length) { setError("Add at least one in-stock product to the order."); return; }
-    if (cart.some((item) => !Number.isFinite(item.unitSellingPrice) || item.unitSellingPrice <= 0)) { setError("Every product must have a selling price greater than zero."); return; }
+    if (cart.some((item) => !Number.isFinite(Number(item.unitSellingPrice)) || Number(item.unitSellingPrice) <= 0)) { setError("Every product must have a selling price greater than zero."); return; }
     const result = await addSale({ customerId: customerId || undefined, customerName, customerContactNumber, customerCode, items: discountedCart });
     if (!result.ok) { setError(result.message); setSuccess(null); return; }
     setCart([]);
@@ -253,14 +274,14 @@ export function PosWorkspace() {
           {mode === "sale" ? <SaleOrder cart={cart} products={products} onRemove={removeFromCart} onPriceChange={changePrice} /> : <TradeInOrder mode={mode} products={products} suppliers={suppliers} givenProductId={givenProductId} givenQuantity={givenQuantity} tradeInUnitValue={tradeInUnitValue} receivedProductId={receivedProductId} receivedQuantity={receivedQuantity} receivedUnitSellingPrice={receivedUnitSellingPrice} receiveSource={receiveSource} supplierId={supplierId} supplierName={supplierName} supplierContactNumber={supplierContactNumber} supplierCompany={supplierCompany} supplierUnitCost={supplierUnitCost} supplierPaidAmount={supplierPaidAmount} onGivenProduct={selectGivenProduct} onGivenQuantity={setGivenQuantity} onTradeInValue={setTradeInUnitValue} onReceivedProduct={selectReceivedProduct} onReceivedQuantity={setReceivedQuantity} onSellingPrice={setReceivedUnitSellingPrice} onReceiveSource={setReceiveSource} onSupplier={setSupplierId} onSupplierName={setSupplierName} onSupplierContact={setSupplierContactNumber} onSupplierCompany={setSupplierCompany} onSupplierCost={setSupplierUnitCost} onSupplierPaid={setSupplierPaidAmount} />}
         </div>
         <Notification message={success ?? error} variant={error ? "error" : "success"} onDismiss={() => { setError(null); setSuccess(null); }} />
-        <div className="pos-order-footer">{mode === "sale" ? <><div className="pos-total-row"><span>Subtotal</span><strong>{formatCurrency(cartSubtotal)}</strong></div><div className="pos-total-row pos-discount-summary"><label htmlFor="pos-order-discount">Discount</label><input id="pos-order-discount" type="number" min={0} max={cartSubtotal} value={orderDiscount} onChange={(event) => setOrderDiscount(event.target.value)} aria-label="Order discount" /></div><div className="pos-total-row pos-grand-total"><span>Total</span><strong>{formatCurrency(cartTotal)}</strong></div><Button variant="brand" className="pos-complete-button" disabled={!hydrated || !cart.length} onClick={() => { setError(null); setCheckoutOpen(true); }}><WalletCards size={16} />Complete sale</Button></> : <><div className="pos-total-row"><span>{mode === "buyback" ? "Customer payout" : exchangeBalance >= 0 ? "Customer pays" : "Customer credit"}</span><strong>{formatCurrency(mode === "buyback" ? tradeInTotal : Math.abs(exchangeBalance))}</strong></div><Button variant="brand" className="pos-complete-button" disabled={!hydrated || exchangeSubmitting} onClick={submitExchange}>{exchangeSubmitting ? "Saving..." : mode === "buyback" ? "Record buyback" : "Complete exchange"}</Button></>}</div>
+        <div className="pos-order-footer">{mode === "sale" ? <><div className="pos-total-row"><span>Subtotal</span><strong>{formatCurrency(cartSubtotal)}</strong></div><div className="pos-total-row pos-discount-summary"><label htmlFor="pos-order-discount">Discount</label><input id="pos-order-discount" type="number" min={0} max={cartSubtotal} value={orderDiscount} onChange={(event) => setOrderDiscount(event.target.value)} aria-label="Order discount" /></div><div className="pos-total-row pos-grand-total"><span>Total</span><strong>{formatCurrency(cartTotal)}</strong></div><Button variant="brand" className="pos-complete-button" disabled={!hydrated || !cart.length} onClick={() => { setError(null); if (validateCustomer()) setCheckoutOpen(true); }}><WalletCards size={16} />Complete sale</Button></> : <><div className="pos-total-row"><span>{mode === "buyback" ? "Customer payout" : exchangeBalance >= 0 ? "Customer pays" : "Customer credit"}</span><strong>{formatCurrency(mode === "buyback" ? tradeInTotal : Math.abs(exchangeBalance))}</strong></div><Button variant="brand" className="pos-complete-button" disabled={!hydrated || exchangeSubmitting} onClick={submitExchange}>{exchangeSubmitting ? "Saving..." : mode === "buyback" ? "Record buyback" : "Complete exchange"}</Button></>}</div>
       </aside>
     <Modal open={checkoutOpen} title="Confirm sale" description="Review the order before updating inventory and recording the transaction." onClose={() => setCheckoutOpen(false)}><div className="pos-confirmation"><div className="pos-confirmation-items">{discountedCart.map((item) => { const product = products.find((entry) => entry.id === item.productId); return <div key={item.productId}><span>{product?.name ?? "Product"} × {item.quantity}</span><strong>{formatCurrency(item.quantity * item.unitSellingPrice - item.discount)}</strong></div>; })}</div><div className="pos-confirmation-total"><span>{customerName || "Customer"}</span><strong>{formatCurrency(cartTotal)}</strong></div><div className="primitive-dialog-actions px-0 pb-0"><Button type="button" variant="secondary" onClick={() => setCheckoutOpen(false)}>Cancel</Button><Button type="button" variant="brand" onClick={submitSale}><Check size={15} />Confirm sale</Button></div></div></Modal>
   </div>;
 }
 
-function SaleOrder({ cart, products, onRemove, onPriceChange }: { cart: CartLine[]; products: Product[]; onRemove: (productId: string) => void; onPriceChange: (product: Product, price: number) => void }) {
-  return <section className="pos-section pos-cart-section">{cart.length ? <div className="pos-cart-list"><div className="pos-cart-list-header" aria-hidden="true" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 36px 116px 22px", columnGap: 14, alignItems: "center", padding: "0 0 8px", color: "var(--text-muted)", fontSize: 9, fontWeight: 500 }}><span>Product</span><span style={{ textAlign: "center" }}>Qty</span><span style={{ textAlign: "center" }}>Unit price</span><span /></div>{cart.map((item) => { const product = products.find((entry) => entry.id === item.productId); if (!product) return null; return <div className="pos-cart-item" key={item.productId} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 36px 116px 22px", columnGap: 14, alignItems: "center", border: "none", borderRadius: 0, background: "transparent", boxShadow: "none", padding: "8px 0" }}><div className="pos-cart-product" style={{ minWidth: 0 }}><strong style={{ display: "block", overflow: "hidden", color: "var(--text-primary)", fontSize: 12, fontWeight: 700, textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.name}</strong><small style={{ display: "block", marginTop: 3, overflow: "hidden", color: "var(--text-primary)", fontSize: 10, fontWeight: 400, textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.color || "Unspecified"}</small></div><span className="pos-cart-item-quantity" style={{ color: "var(--text-primary)", fontSize: 10, fontWeight: 800, textAlign: "center" }}>{item.quantity}</span><input className="pos-cart-price-input" type="number" min={1} step="0.01" value={item.unitSellingPrice} onChange={(event) => onPriceChange(product, Number(event.target.value))} aria-label={`Selling price for ${product.name}`} /><button type="button" onClick={() => onRemove(item.productId)} aria-label={`Remove ${product.name}`} style={{ display: "grid", width: 22, height: 22, placeItems: "center", border: 0, background: "transparent", color: "var(--error)", cursor: "pointer" }}><Trash2 size={14} /></button></div>; })}</div> : <div className="pos-cart-empty" style={{ gap: 0 }}><Image src="/cart-icon.png" alt="" width={58} height={58} className="pos-empty-cart-image" style={{ display: "block", marginBottom: 2 }} /><strong style={{ margin: 0, color: "var(--text-primary)", lineHeight: 1.1 }}>Your order is empty</strong><span style={{ margin: 0, color: "var(--text-primary)", lineHeight: 1.1 }}>Select an in-stock product to begin.</span></div>}</section>;
+function SaleOrder({ cart, products, onRemove, onPriceChange }: { cart: CartLine[]; products: Product[]; onRemove: (productId: string) => void; onPriceChange: (product: Product, price: string) => void }) {
+  return <section className="pos-section pos-cart-section">{cart.length ? <div className="pos-cart-list"><div className="pos-cart-list-header" aria-hidden="true" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 36px 116px 22px", columnGap: 14, alignItems: "center", padding: "0 0 8px", color: "var(--text-muted)", fontSize: 9, fontWeight: 500 }}><span>Product</span><span style={{ textAlign: "center" }}>Qty</span><span style={{ textAlign: "center" }}>Unit price</span><span /></div>{cart.map((item) => { const product = products.find((entry) => entry.id === item.productId); if (!product) return null; return <div className="pos-cart-item" key={item.productId} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 36px 116px 22px", columnGap: 14, alignItems: "center", border: "none", borderRadius: 0, background: "transparent", boxShadow: "none", padding: "8px 0" }}><div className="pos-cart-product" style={{ minWidth: 0 }}><strong style={{ display: "block", overflow: "hidden", color: "var(--text-primary)", fontSize: 12, fontWeight: 700, textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.name}</strong><small style={{ display: "block", marginTop: 3, overflow: "hidden", color: "var(--text-primary)", fontSize: 10, fontWeight: 400, textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.color || "Unspecified"}</small></div><span className="pos-cart-item-quantity" style={{ color: "var(--text-primary)", fontSize: 10, fontWeight: 800, textAlign: "center" }}>{item.quantity}</span><input className="pos-cart-price-input" type="number" min={1} step="0.01" value={item.unitSellingPrice} onChange={(event) => onPriceChange(product, event.target.value)} aria-label={`Selling price for ${product.name}`} /><button type="button" onClick={() => onRemove(item.productId)} aria-label={`Remove ${product.name}`} style={{ display: "grid", width: 22, height: 22, placeItems: "center", border: 0, background: "transparent", color: "var(--error)", cursor: "pointer" }}><Trash2 size={14} /></button></div>; })}</div> : <div className="pos-cart-empty" style={{ gap: 0 }}><Image src="/cart-icon.png" alt="" width={58} height={58} className="pos-empty-cart-image" style={{ display: "block", marginBottom: 2 }} /><strong style={{ margin: 0, color: "var(--text-primary)", lineHeight: 1.1 }}>Your order is empty</strong><span style={{ margin: 0, color: "var(--text-primary)", lineHeight: 1.1 }}>Select an in-stock product to begin.</span></div>}</section>;
 }
 
 type TradeInOrderProps = { mode: "exchange" | "buyback"; products: Product[]; suppliers: Array<{ id: string; name: string; contactNumber: string; company: string }>; givenProductId: string; givenQuantity: string; tradeInUnitValue: string; receivedProductId: string; receivedQuantity: string; receivedUnitSellingPrice: string; receiveSource: "inventory" | "supplier"; supplierId: string; supplierName: string; supplierContactNumber: string; supplierCompany: string; supplierUnitCost: string; supplierPaidAmount: string; onGivenProduct: (value: string) => void; onGivenQuantity: (value: string) => void; onTradeInValue: (value: string) => void; onReceivedProduct: (value: string) => void; onReceivedQuantity: (value: string) => void; onSellingPrice: (value: string) => void; onReceiveSource: (value: "inventory" | "supplier") => void; onSupplier: (value: string) => void; onSupplierName: (value: string) => void; onSupplierContact: (value: string) => void; onSupplierCompany: (value: string) => void; onSupplierCost: (value: string) => void; onSupplierPaid: (value: string) => void };

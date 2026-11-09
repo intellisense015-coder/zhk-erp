@@ -2,7 +2,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { defaultExpenseCategories, type CapitalAccount, type CapitalEntry, type Customer, type Expense, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from '../erp-data'
+import { type CapitalAccount, type CapitalEntry, type Customer, type Expense, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from '../erp-data'
 
 export type RemoteStoreData = {
   products: Product[]
@@ -15,6 +15,11 @@ export type RemoteStoreData = {
   capitalAccounts: CapitalAccount[]
   capitalEntries: CapitalEntry[]
 }
+
+export type RemoteResource = keyof RemoteStoreData
+type ResourceResult<R extends RemoteResource> = { data: RemoteStoreData[R] | null; error?: string }
+export type TransactionPageFilters = { page: number; pageSize: number; month?: string; search?: string }
+export type RemotePage<T> = { items: T[]; total: number; page: number; pageSize: number; hasNextPage: boolean }
 
 type DbRow = Record<string, unknown>
 type WorkspaceRowsResult = { data: DbRow[] | null; error?: string }
@@ -183,88 +188,199 @@ function mapTransaction(row: DbRow, saleItemsByTransaction: Map<string, SaleLine
   return transaction
 }
 
-export async function loadSupabaseStoreData(supabase: SupabaseClient, workspaceId: string): Promise<{ data: RemoteStoreData | null; error?: string }> {
-  const results = await Promise.all([
-    fetchWorkspaceRows(supabase, 'products', '*', workspaceId, 'created_at'),
-    fetchWorkspaceRows(supabase, 'customers', '*', workspaceId, 'created_at'),
-    fetchWorkspaceRows(supabase, 'suppliers', '*', workspaceId, 'created_at'),
-    fetchWorkspaceRows(supabase, 'transactions', '*', workspaceId, 'occurred_on'),
-    fetchWorkspaceRows(supabase, 'sale_items', '*', workspaceId, 'id'),
-    fetchWorkspaceRows(supabase, 'supplier_payments', '*', workspaceId, 'occurred_on'),
-    fetchWorkspaceRows(supabase, 'expenses', '*', workspaceId, 'occurred_on'),
-    fetchWorkspaceRows(supabase, 'expense_categories', 'name', workspaceId, 'name', true),
-    fetchWorkspaceRows(supabase, 'capital_accounts', '*', workspaceId, 'created_at', true),
-    fetchWorkspaceRows(supabase, 'capital_entries', '*', workspaceId, 'occurred_on'),
-  ])
+function mapSupplierPayment(row: DbRow): SupplierPayment {
+  const occurredOn = date(row.occurred_on)
+  return {
+    id: text(row.id),
+    supplierId: text(row.supplier_id),
+    amount: number(row.amount),
+    note: optionalText(row.note),
+    date: occurredOn,
+    time: text(row.created_at, 'Recorded'),
+    createdAt: text(row.created_at, `${occurredOn}T00:00:00.000Z`),
+    capitalId: optionalText(row.capital_id),
+  }
+}
 
-  const failed = results.find((result) => result.error)
-  if (failed?.error) return { data: null, error: failed.error }
+function mapExpense(row: DbRow): Expense {
+  const occurredOn = date(row.occurred_on)
+  return {
+    id: text(row.id),
+    invoiceNumber: optionalText(row.invoice_number),
+    category: text(row.category),
+    description: text(row.description),
+    amount: number(row.amount),
+    date: occurredOn,
+    month: month(occurredOn),
+    paymentMethod: optionalText(row.payment_method),
+    note: optionalText(row.note),
+    createdAt: text(row.created_at, `${occurredOn}T00:00:00.000Z`),
+  }
+}
 
-  const [products, customers, suppliers, transactions, saleItems, supplierPayments, expenses, expenseCategories, capitalAccounts, capitalEntries] = results
-  const saleItemsByTransaction = new Map<string, SaleLineItem[]>()
-  for (const row of rows(saleItems.data)) {
-    const transactionId = text(row.transaction_id)
-    const item = mapSaleItem(row)
-    saleItemsByTransaction.set(transactionId, [...(saleItemsByTransaction.get(transactionId) ?? []), item])
+function mapCapitalAccount(row: DbRow): CapitalAccount {
+  return {
+    id: text(row.id),
+    name: text(row.name),
+    ownerName: optionalText(row.owner_name),
+    createdAt: text(row.created_at, new Date().toISOString()),
+  }
+}
+
+function mapCapitalEntry(row: DbRow): CapitalEntry {
+  const occurredOn = date(row.occurred_on)
+  return {
+    id: text(row.id),
+    capitalId: text(row.capital_id),
+    type: text(row.entry_type) as CapitalEntry['type'],
+    amount: number(row.amount),
+    date: occurredOn,
+    month: month(occurredOn),
+    note: optionalText(row.note),
+    createdAt: text(row.created_at, `${occurredOn}T00:00:00.000Z`),
+  }
+}
+
+function mapRows<T>(result: WorkspaceRowsResult, mapper: (row: DbRow) => T): { data: T[] | null; error?: string } {
+  if (result.error) return { data: null, error: result.error }
+  return { data: rows(result.data).map(mapper) }
+}
+
+function escapePostgrestSearch(value: string) {
+  return value.replace(/[\\%_,().]/g, (character) => `\\${character}`)
+}
+
+function nextMonthStart(value: string) {
+  const [year, monthNumber] = value.split('-').map(Number)
+  if (!Number.isInteger(year) || !Number.isInteger(monthNumber) || monthNumber < 1 || monthNumber > 12) return undefined
+  const next = new Date(Date.UTC(year, monthNumber, 1))
+  return next.toISOString().slice(0, 10)
+}
+
+export async function loadSupabaseTransactionPage(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  filters: TransactionPageFilters,
+): Promise<{ data: RemotePage<Transaction> | null; error?: string }> {
+  const page = Math.max(1, Math.floor(filters.page))
+  const pageSize = Math.min(100, Math.max(5, Math.floor(filters.pageSize)))
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+  const query = supabase
+    .from('transactions')
+    .select('*', { count: 'exact' })
+    .eq('workspace_id', workspaceId)
+    .order('occurred_on', { ascending: false })
+    .order('created_at', { ascending: false })
+    .range(from, to)
+
+  const selectedMonth = filters.month?.trim()
+  if (selectedMonth && selectedMonth !== 'all') {
+    const monthEnd = nextMonthStart(selectedMonth)
+    if (/^\d{4}-\d{2}$/.test(selectedMonth) && monthEnd) query.gte('occurred_on', `${selectedMonth}-01`).lt('occurred_on', monthEnd)
   }
 
+  const search = filters.search?.trim()
+  if (search) {
+    const escaped = escapePostgrestSearch(search)
+    query.or(`name.ilike.%${escaped}%,party.ilike.%${escaped}%,transaction_type.ilike.%${escaped}%,source.ilike.%${escaped}%`)
+  }
+
+  const transactionResult = await query
+  if (transactionResult.error) return { data: null, error: transactionResult.error.message }
+  const transactionRows = rows(transactionResult.data)
+  const transactionIds = transactionRows.map((row) => text(row.id)).filter(Boolean)
+  const saleItemsByTransaction = new Map<string, SaleLineItem[]>()
+
+  if (transactionIds.length) {
+    const saleItemsResult = await supabase
+      .from('sale_items')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .in('transaction_id', transactionIds)
+      .order('line_number', { ascending: true })
+    if (saleItemsResult.error) return { data: null, error: saleItemsResult.error.message }
+    for (const row of rows(saleItemsResult.data)) {
+      const transactionId = text(row.transaction_id)
+      saleItemsByTransaction.set(transactionId, [...(saleItemsByTransaction.get(transactionId) ?? []), mapSaleItem(row)])
+    }
+  }
+
+  const total = transactionResult.count ?? 0
   return {
     data: {
-      products: rows(products.data).map(mapProduct),
-      customers: rows(customers.data).map(mapCustomer),
-      suppliers: rows(suppliers.data).map(mapSupplier),
-      transactions: rows(transactions.data).map((row) => mapTransaction(row, saleItemsByTransaction)),
-      supplierPayments: rows(supplierPayments.data).map((row) => {
-        const occurredOn = date(row.occurred_on)
-        return {
-          id: text(row.id),
-          supplierId: text(row.supplier_id),
-          amount: number(row.amount),
-          note: optionalText(row.note),
-          date: occurredOn,
-          time: text(row.created_at, 'Recorded'),
-          createdAt: text(row.created_at, `${occurredOn}T00:00:00.000Z`),
-          capitalId: optionalText(row.capital_id),
-        }
-      }),
-      expenses: rows(expenses.data).map((row) => {
-        const occurredOn = date(row.occurred_on)
-        return {
-          id: text(row.id),
-          invoiceNumber: optionalText(row.invoice_number),
-          category: text(row.category),
-          description: text(row.description),
-          amount: number(row.amount),
-          date: occurredOn,
-          month: month(occurredOn),
-          paymentMethod: optionalText(row.payment_method),
-          note: optionalText(row.note),
-          createdAt: text(row.created_at, `${occurredOn}T00:00:00.000Z`),
-        }
-      }),
-      expenseCategories: Array.from(new Set([
-        ...defaultExpenseCategories,
-        ...rows(expenseCategories.data).map((row) => text(row.name)).filter(Boolean),
-      ])),
-      capitalAccounts: rows(capitalAccounts.data).map((row) => ({
-        id: text(row.id),
-        name: text(row.name),
-        ownerName: optionalText(row.owner_name),
-        createdAt: text(row.created_at, new Date().toISOString()),
-      })),
-      capitalEntries: rows(capitalEntries.data).map((row) => {
-        const occurredOn = date(row.occurred_on)
-        return {
-          id: text(row.id),
-          capitalId: text(row.capital_id),
-          type: text(row.entry_type) as CapitalEntry['type'],
-          amount: number(row.amount),
-          date: occurredOn,
-          month: month(occurredOn),
-          note: optionalText(row.note),
-          createdAt: text(row.created_at, `${occurredOn}T00:00:00.000Z`),
-        }
-      }),
+      items: transactionRows.map((row) => mapTransaction(row, saleItemsByTransaction)),
+      total,
+      page,
+      pageSize,
+      hasNextPage: from + transactionRows.length < total,
+    },
+  }
+}
+
+export async function loadSupabaseResource<R extends RemoteResource>(supabase: SupabaseClient, workspaceId: string, resource: R): Promise<ResourceResult<R>> {
+  switch (resource) {
+    case 'products':
+      return mapRows(await fetchWorkspaceRows(supabase, 'products', '*', workspaceId, 'created_at'), mapProduct) as ResourceResult<R>
+    case 'customers':
+      return mapRows(await fetchWorkspaceRows(supabase, 'customers', '*', workspaceId, 'created_at'), mapCustomer) as ResourceResult<R>
+    case 'suppliers':
+      return mapRows(await fetchWorkspaceRows(supabase, 'suppliers', '*', workspaceId, 'created_at'), mapSupplier) as ResourceResult<R>
+    case 'transactions': {
+      const [transactionRows, saleItemRows] = await Promise.all([
+        fetchWorkspaceRows(supabase, 'transactions', '*', workspaceId, 'occurred_on'),
+        fetchWorkspaceRows(supabase, 'sale_items', '*', workspaceId, 'id'),
+      ])
+      if (transactionRows.error) return { data: null, error: transactionRows.error } as ResourceResult<R>
+      if (saleItemRows.error) return { data: null, error: saleItemRows.error } as ResourceResult<R>
+      const saleItemsByTransaction = new Map<string, SaleLineItem[]>()
+      for (const row of rows(saleItemRows.data)) {
+        const transactionId = text(row.transaction_id)
+        saleItemsByTransaction.set(transactionId, [...(saleItemsByTransaction.get(transactionId) ?? []), mapSaleItem(row)])
+      }
+      return { data: rows(transactionRows.data).map((row) => mapTransaction(row, saleItemsByTransaction)) } as ResourceResult<R>
+    }
+    case 'supplierPayments':
+      return mapRows(await fetchWorkspaceRows(supabase, 'supplier_payments', '*', workspaceId, 'occurred_on'), mapSupplierPayment) as ResourceResult<R>
+    case 'expenses':
+      return mapRows(await fetchWorkspaceRows(supabase, 'expenses', '*', workspaceId, 'occurred_on'), mapExpense) as ResourceResult<R>
+    case 'expenseCategories': {
+      const result = await fetchWorkspaceRows(supabase, 'expense_categories', 'name', workspaceId, 'name', true)
+      if (result.error) return { data: null, error: result.error } as ResourceResult<R>
+      return { data: Array.from(new Set(rows(result.data).map((row) => text(row.name)).filter(Boolean))) } as ResourceResult<R>
+    }
+    case 'capitalAccounts':
+      return mapRows(await fetchWorkspaceRows(supabase, 'capital_accounts', '*', workspaceId, 'created_at', true), mapCapitalAccount) as ResourceResult<R>
+    case 'capitalEntries':
+      return mapRows(await fetchWorkspaceRows(supabase, 'capital_entries', '*', workspaceId, 'occurred_on'), mapCapitalEntry) as ResourceResult<R>
+  }
+}
+
+export async function loadSupabaseStoreData(supabase: SupabaseClient, workspaceId: string): Promise<{ data: RemoteStoreData | null; error?: string }> {
+  const [products, customers, suppliers, transactions, supplierPayments, expenses, expenseCategories, capitalAccounts, capitalEntries] = await Promise.all([
+    loadSupabaseResource(supabase, workspaceId, 'products'),
+    loadSupabaseResource(supabase, workspaceId, 'customers'),
+    loadSupabaseResource(supabase, workspaceId, 'suppliers'),
+    loadSupabaseResource(supabase, workspaceId, 'transactions'),
+    loadSupabaseResource(supabase, workspaceId, 'supplierPayments'),
+    loadSupabaseResource(supabase, workspaceId, 'expenses'),
+    loadSupabaseResource(supabase, workspaceId, 'expenseCategories'),
+    loadSupabaseResource(supabase, workspaceId, 'capitalAccounts'),
+    loadSupabaseResource(supabase, workspaceId, 'capitalEntries'),
+  ])
+  const failed = [products, customers, suppliers, transactions, supplierPayments, expenses, expenseCategories, capitalAccounts, capitalEntries].find((result) => result.error)
+  if (failed?.error) return { data: null, error: failed.error }
+  return {
+    data: {
+      products: products.data ?? [],
+      customers: customers.data ?? [],
+      suppliers: suppliers.data ?? [],
+      transactions: transactions.data ?? [],
+      supplierPayments: supplierPayments.data ?? [],
+      expenses: expenses.data ?? [],
+      expenseCategories: expenseCategories.data ?? [],
+      capitalAccounts: capitalAccounts.data ?? [],
+      capitalEntries: capitalEntries.data ?? [],
     },
   }
 }

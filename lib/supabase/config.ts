@@ -25,3 +25,7 @@ export function getSupabaseEnv(): SupabaseEnv | null {
 export function isSupabaseConfigured(): boolean {
   return getSupabaseEnv() !== null
 }
+
+export function isLocalOnlyMode(): boolean {
+  return !isSupabaseConfigured() && process.env.NODE_ENV !== 'production'
+}

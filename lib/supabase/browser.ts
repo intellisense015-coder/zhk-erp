@@ -9,7 +9,7 @@ let browserClient: SupabaseClient | null = null
 
 /**
  * Creates the browser client only when environment configuration exists.
- * The current app remains local-first until the data layer is migrated.
+ * Remote ERP data is cached in memory by the TanStack Query provider.
  */
 export function createSupabaseBrowserClient(): SupabaseClient | null {
   if (browserClient) {

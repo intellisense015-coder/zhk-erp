@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ErpShell } from "../../components/erp/erp-shell";
+import { QueryProvider } from "../../components/providers/query-provider";
 
 // The ERP shell verifies the Supabase session/workspace and hydrates data on
 // the client before rendering route content, so this section is not an
@@ -7,5 +8,5 @@ import { ErpShell } from "../../components/erp/erp-shell";
 export const instant = false;
 
 export default function ErpLayout({ children }: { children: ReactNode }) {
-  return <ErpShell>{children}</ErpShell>;
+  return <QueryProvider><ErpShell>{children}</ErpShell></QueryProvider>;
 }

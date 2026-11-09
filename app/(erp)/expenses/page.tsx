@@ -13,7 +13,7 @@ import { useErpStore } from "../../../lib/erp-store";
 
 type ExpenseDraft = { category: string; description: string; amount: string; paymentMethod: string; note: string };
 
-const blankDraft: ExpenseDraft = { category: "Other", description: "", amount: "", paymentMethod: "Cash", note: "" };
+const blankDraft: ExpenseDraft = { category: "", description: "", amount: "", paymentMethod: "Cash", note: "" };
 
 export default function ExpensesPage() {
   const { expenses, expenseCategories, addExpense, updateExpense, deleteExpense, addExpenseCategory } = useErpStore();
@@ -39,7 +39,7 @@ export default function ExpensesPage() {
   const thisMonth = currentMonth ? expenses.filter((expense) => expense.month === currentMonth).reduce((sum, expense) => sum + expense.amount, 0) : 0;
   const largest = expenses.reduce((max, expense) => Math.max(max, expense.amount), 0);
 
-  const openCreate = () => { setEditing(null); setDraft(blankDraft); setNotification(null); setEditorOpen(true); };
+  const openCreate = () => { setEditing(null); setDraft({ ...blankDraft, category: expenseCategories[0] ?? "" }); setNotification(null); setEditorOpen(true); };
   const openCategory = () => { setCategoryName(""); setNotification(null); setCategoryOpen(true); };
   const submitCategory = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const result = await addExpenseCategory(categoryName); if (!result.ok) { setNotification({ variant: "error", message: result.message }); return; } setCategoryOpen(false); setCategoryName(""); setNotification({ variant: "success", message: "Expense category added successfully." }); };
   const openEdit = (expense: Expense) => { setEditing(expense); setDraft({ category: expense.category, description: expense.description, amount: String(expense.amount), paymentMethod: expense.paymentMethod ?? "Cash", note: expense.note ?? "" }); setNotification(null); setEditorOpen(true); };

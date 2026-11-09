@@ -50,6 +50,17 @@ function publicAppUrl(request: NextRequest) {
   return request.nextUrl.origin;
 }
 
+function isTrustedRequestOrigin(request: NextRequest) {
+  const requestOrigin = request.headers.get("origin")?.trim();
+  if (!requestOrigin) return false;
+
+  try {
+    return requestOrigin === new URL(publicAppUrl(request)).origin;
+  } catch {
+    return false;
+  }
+}
+
 function safeInvitationDeliveryMessage(error: { message?: string | null; code?: string | null; status?: number | null } | null) {
   const details = `${error?.code ?? ""} ${error?.message ?? ""}`.toLowerCase();
   if (details.includes("redirect") || details.includes("allowlist") || details.includes("redirect_to")) {
@@ -65,6 +76,10 @@ function safeInvitationDeliveryMessage(error: { message?: string | null; code?: 
 }
 
 export async function POST(request: NextRequest) {
+  if (!isTrustedRequestOrigin(request)) {
+    return json({ message: "The invitation request origin is not trusted." }, 403);
+  }
+
   const rate = consumeRateLimit(`workspace-invite:${clientAddress(request)}`, 10, 60 * 60 * 1000);
   if (!rate.allowed) {
     return json({ message: "Too many invitation attempts. Please try again later." }, 429);

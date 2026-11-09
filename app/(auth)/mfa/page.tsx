@@ -148,30 +148,23 @@ export default function MfaPage() {
     router.replace(returnTo);
   };
 
-  const signOut = async () => {
-    const supabase = createSupabaseBrowserClient();
-    await supabase?.auth.signOut();
-    router.replace("/login");
-  };
-
   const isEnrollmentReady = mode === "enroll" && Boolean(qrCode);
   const title = mode === "challenge" ? "Verify Microsoft Authenticator" : "Connect Microsoft Authenticator";
   const subtitle = mode === "challenge"
-    ? "Open Microsoft Authenticator and enter the current six-digit code to continue."
-    : "Use Microsoft Authenticator to protect this workspace with a rotating six-digit code.";
+    ? "Enter your current six-digit code to continue."
+    : "Use Microsoft Authenticator to protect this workspace.";
 
   return (
     <main className="auth-page">
       <section className="auth-card mfa-card" aria-live="polite">
         <p className="erp-eyebrow">Solexa security</p>
         <h1 className="auth-title">{mode === "loading" ? "Checking security…" : title}</h1>
-        <p className="auth-subtitle">{email ? `${email} · ` : ""}{subtitle}</p>
+        <p className="auth-subtitle mfa-subtitle">{email ? `${email} · ` : ""}{subtitle}</p>
 
         {mode === "loading" && <p className="mfa-status">Checking your Microsoft Authenticator factor…</p>}
 
         {mode === "enroll" && !isEnrollmentReady && (
           <div className="mfa-intro">
-            <p>Microsoft Authenticator verification is required before opening ERP data.</p>
             <Button type="button" variant="brand" loading={loading} onClick={startEnrollment}>Set up Microsoft Authenticator</Button>
           </div>
         )}
@@ -194,7 +187,6 @@ export default function MfaPage() {
         )}
 
         {mode !== "loading" && !isEnrollmentReady && error && <p className="auth-field-error" role="alert">{error}</p>}
-        <button type="button" className="mfa-signout" onClick={() => void signOut()}>Sign out</button>
       </section>
     </main>
   );

@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "../../../components/primitives/button";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
+import { clearLocalErpSnapshots } from "../../../lib/erp-store";
 
 export default function AccessDeniedPage() {
   const router = useRouter();
 
   const signOut = async () => {
     await createSupabaseBrowserClient()?.auth.signOut();
+    clearLocalErpSnapshots();
     window.localStorage.removeItem("solexa-workspace-id");
     router.replace("/login");
   };

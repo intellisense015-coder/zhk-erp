@@ -23,7 +23,14 @@ function isPublicPath(pathname: string) {
  */
 export async function updateSupabaseSession(request: NextRequest) {
   const env = getSupabaseEnv()
+  const pathname = request.nextUrl.pathname
   if (!env) {
+    if (process.env.NODE_ENV === 'production' && !isPublicPath(pathname)) {
+      return NextResponse.json(
+        { message: 'Secure authentication is not configured.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      )
+    }
     return NextResponse.next()
   }
 
@@ -44,8 +51,6 @@ export async function updateSupabaseSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  const pathname = request.nextUrl.pathname
-
   if (!user && !isPublicPath(pathname)) {
     return NextResponse.redirect(new URL('/login', request.url))
   }

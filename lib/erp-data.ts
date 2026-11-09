@@ -312,8 +312,6 @@ export type Expense = {
   createdAt?: string;
 };
 
-export const defaultExpenseCategories = ["Rent", "Utilities", "Salaries", "Transport", "Marketing", "Repairs", "Office supplies", "Other"];
-
 export type CapitalAccount = {
   id: string;
   name: string;

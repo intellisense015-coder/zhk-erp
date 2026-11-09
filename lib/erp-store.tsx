@@ -1,19 +1,38 @@
 "use client";
 
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { defaultExpenseCategories, getCapitalSummary, productBrands, type CapitalAccount, type CapitalEntry, type Customer, type Expense, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from "./erp-data";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getCapitalSummary, productBrands, type CapitalAccount, type CapitalEntry, type Customer, type Expense, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from "./erp-data";
 import { createInvoiceNumber } from "./invoice-utils";
 import type { ExchangeFormValues, ProductFormValues, PurchaseFormValues, SaleFormValues } from "./validations";
-import { loadSupabaseStoreData } from "./supabase/erp-read";
+import type { RemoteResource } from "./supabase/erp-read";
 import { createSupabaseBrowserClient } from "./supabase/browser";
-import { isSupabaseConfigured } from "./supabase/config";
+import { isLocalOnlyMode, isSupabaseConfigured } from "./supabase/config";
+import { erpQueryKeys, fetchRemoteResource, remoteResources } from "./supabase/erp-query";
 
 // v2 intentionally starts with a clean workspace so the former demo snapshot
-// cannot reappear as real business data. Records created in this version persist
-// under this namespace across reloads.
+// cannot reappear as real business data. The local namespace is retained only
+// for development/staging migration mode; configured Supabase sessions do not
+// persist ERP records in browser storage.
 const STORAGE_KEY = "solexa-erp-data-v2";
-function storageKey(workspaceId?: string | null) {
-  return workspaceId && isSupabaseConfigured() ? `${STORAGE_KEY}:${workspaceId}` : STORAGE_KEY;
+export function clearLocalErpSnapshots() {
+  if (typeof window === "undefined") return;
+
+  const keysToRemove: string[] = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (typeof key === "string" && (key === STORAGE_KEY || key.startsWith(`${STORAGE_KEY}:`))) {
+      keysToRemove.push(key);
+    }
+  }
+
+  keysToRemove.forEach((key) => window.localStorage.removeItem(key));
+}
+
+function persistLocalStore(next: StoreData) {
+  if (!isLocalOnlyMode()) return;
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 }
 type StoreData = { products: Product[]; transactions: Transaction[]; customers: Customer[]; suppliers: Supplier[]; supplierPayments: SupplierPayment[]; expenses: Expense[]; expenseCategories: string[]; capitalAccounts: CapitalAccount[]; capitalEntries: CapitalEntry[] };
 type ExpenseFormValues = Omit<Expense, "id" | "date" | "month" | "createdAt">;
@@ -44,7 +63,7 @@ type StoreContextValue = StoreData & {
   updateSale: (id: string, values: { customerName: string; items: SaleLineItem[] }) => Promise<StoreResult>;
 };
 
-const emptyStore: StoreData = { products: [], transactions: [], customers: [], suppliers: [], supplierPayments: [], expenses: [], expenseCategories: defaultExpenseCategories, capitalAccounts: [], capitalEntries: [] };
+const emptyStore: StoreData = { products: [], transactions: [], customers: [], suppliers: [], supplierPayments: [], expenses: [], expenseCategories: [], capitalAccounts: [], capitalEntries: [] };
 const StoreContext = createContext<StoreContextValue | null>(null);
 
 function readableRpcError(message: string, fallback: string) {
@@ -82,18 +101,51 @@ function makeUniqueCustomerCode(requested: string, customers: Customer[], curren
 }
 
 export function ErpStoreProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<StoreData>(emptyStore);
-  const [hydrated, setHydrated] = useState(false);
+  const [storeData, setData] = useState<StoreData>(emptyStore);
+  const [localHydrated, setLocalHydrated] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
+  const configured = isSupabaseConfigured();
+  const queryClient = useQueryClient();
+
+  useEffect(() => () => queryClient.clear(), [queryClient]);
+
+  const remoteQueries = useQueries({
+    queries: remoteResources.map((resource) => ({
+      queryKey: workspaceId ? erpQueryKeys.resource(workspaceId, resource) : ["erp", "disabled", resource],
+      queryFn: () => fetchRemoteResource(supabase as SupabaseClient, workspaceId as string, resource),
+      enabled: Boolean(configured && supabase && workspaceId),
+    })),
+  });
+
+  const remoteData = useMemo<StoreData | null>(() => {
+    if (!configured || !workspaceId || !supabase || remoteQueries.some((query) => !query.isSuccess)) return null;
+    const getResource = <R extends RemoteResource>(resource: R) => remoteQueries[remoteResources.indexOf(resource)]?.data as StoreData[R];
+    return {
+      products: getResource("products") ?? [],
+      customers: getResource("customers") ?? [],
+      suppliers: getResource("suppliers") ?? [],
+      transactions: getResource("transactions") ?? [],
+      supplierPayments: getResource("supplierPayments") ?? [],
+      expenses: getResource("expenses") ?? [],
+      expenseCategories: getResource("expenseCategories") ?? [],
+      capitalAccounts: getResource("capitalAccounts") ?? [],
+      capitalEntries: getResource("capitalEntries") ?? [],
+    };
+  }, [configured, remoteQueries, supabase, workspaceId]);
 
   useEffect(() => {
     let active = true;
     const timer = window.setTimeout(async () => {
       let localData = emptyStore;
-      const configured = isSupabaseConfigured();
-      const workspaceId = configured ? window.localStorage.getItem("solexa-workspace-id") : null;
-      if (!configured) {
+      if (configured) {
+        setWorkspaceId(window.localStorage.getItem("solexa-workspace-id"));
+        setSupabase(createSupabaseBrowserClient());
+        return;
+      }
+      if (isLocalOnlyMode()) {
         try {
-          const stored = window.localStorage.getItem(storageKey(workspaceId));
+          const stored = window.localStorage.getItem(STORAGE_KEY);
           if (stored) {
             const parsed = JSON.parse(stored) as Partial<StoreData>;
           const products = Array.isArray(parsed.products) ? parsed.products.map((product) => { const normalized = { ...product, brand: product.brand ?? "other", model: product.model ?? product.name, color: product.color?.trim() || "Unspecified", vendorName: product.vendorName ?? "Unassigned" }; return { ...normalized, name: normalizeProductName(normalized) }; }) : [];
@@ -130,37 +182,29 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           });
           const nextTransactions = [...migratedPurchases, ...transactions];
           const expenses = Array.isArray(parsed.expenses) ? parsed.expenses : [];
-          const expenseCategories = Array.isArray(parsed.expenseCategories) && parsed.expenseCategories.length ? Array.from(new Set(parsed.expenseCategories.filter((category): category is string => typeof category === "string" && Boolean(category.trim())).map((category) => category.trim()))) : defaultExpenseCategories;
+          const expenseCategories = Array.isArray(parsed.expenseCategories) ? Array.from(new Set(parsed.expenseCategories.filter((category): category is string => typeof category === "string" && Boolean(category.trim())).map((category) => category.trim()))) : [];
           const capitalAccounts = Array.isArray(parsed.capitalAccounts) ? parsed.capitalAccounts : [];
           const capitalEntries = Array.isArray(parsed.capitalEntries) ? parsed.capitalEntries : [];
           const nextData = { products, transactions: nextTransactions, customers, suppliers, supplierPayments: Array.isArray(parsed.supplierPayments) ? parsed.supplierPayments : [], expenses, expenseCategories, capitalAccounts, capitalEntries };
             localData = nextData;
           }
         } catch {
-          window.localStorage.removeItem(storageKey(workspaceId));
-        }
-      }
-
-      let nextData = localData;
-      if (configured) {
-        const supabase = createSupabaseBrowserClient();
-        if (workspaceId && supabase) {
-          const remote = await loadSupabaseStoreData(supabase, workspaceId);
-          nextData = remote.data ?? emptyStore;
-          if (remote.data) window.localStorage.setItem(storageKey(workspaceId), JSON.stringify(remote.data));
+          window.localStorage.removeItem(STORAGE_KEY);
         }
       }
 
       if (!active) return;
-      setData(nextData);
-      setHydrated(true);
+      setData(localData);
+      setLocalHydrated(true);
     }, 0);
     return () => { active = false; window.clearTimeout(timer); };
-  }, []);
+  }, [configured]);
+
+  const hydrated = configured ? Boolean(remoteData) : localHydrated;
 
   const commit = (next: StoreData) => {
     setData(next);
-    window.localStorage.setItem(storageKey(window.localStorage.getItem("solexa-workspace-id")), JSON.stringify(next));
+    persistLocalStore(next);
   };
 
   const normalizeContact = (value: string) => value.replace(/\D/g, "");
@@ -176,19 +220,17 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     }
   })() : "";
 
-  const refreshRemoteStore = useCallback(async (): Promise<StoreResult> => {
-    if (!isSupabaseConfigured()) return { ok: true };
-    const workspaceId = window.localStorage.getItem("solexa-workspace-id");
-    const supabase = createSupabaseBrowserClient();
+  const refreshRemoteStore = useCallback(async (resources: RemoteResource[] = [...remoteResources]): Promise<StoreResult> => {
+    if (!configured) return { ok: true };
     if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
-    const remote = await loadSupabaseStoreData(supabase, workspaceId);
-    if (!remote.data) return { ok: false, message: readableRpcError(remote.error ?? "", "The workspace was saved, but inventory could not be refreshed.") };
-    setData(remote.data);
-    window.localStorage.setItem(storageKey(workspaceId), JSON.stringify(remote.data));
+    await Promise.all(resources.map((resource) => queryClient.invalidateQueries({ queryKey: erpQueryKeys.resource(workspaceId, resource) })));
+    clearLocalErpSnapshots();
     return { ok: true };
-  }, []);
+  }, [configured, queryClient, supabase, workspaceId]);
 
-  const value = useMemo<StoreContextValue>(() => ({
+  const value = useMemo<StoreContextValue>(() => {
+    const data = configured ? (remoteData ?? emptyStore) : storeData;
+    return ({
     ...data,
     hydrated,
     addProduct: async (values) => {
@@ -235,7 +277,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not save this product.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["products", "suppliers", "transactions"]);
       }
       const productId = makeId("product");
       const product = { ...values, name, sku, brand, model, color, imageSource, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company, id: productId, sold: 0, received: values.inStockQuantity };
@@ -293,7 +335,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this product.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["products", "suppliers", "transactions"]);
       }
       const stockIncrease = Math.max(values.inStockQuantity - (existingProduct?.inStockQuantity ?? 0), 0);
       const createdAt = new Date().toISOString();
@@ -310,7 +352,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("delete_product", { target_workspace_id: workspaceId, target_product_id: id });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not delete this product.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["products", "transactions"]);
       }
       commit({ ...data, products: data.products.filter((product) => product.id !== id) });
       return { ok: true };
@@ -331,7 +373,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           customer_payload: { name, contact_number: contactNumber, gender: values.gender?.trim() ?? "", cnic_number: values.cnicNumber?.trim() ?? "" },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not add this customer.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["customers", "transactions"]);
       }
       const customer: Customer = { id: makeId("customer"), name, contactNumber, gender: values.gender?.trim() ?? "", cnicNumber: values.cnicNumber?.trim() ?? "", code: makeUniqueCustomerCode(`CUST-${String(data.customers.length + 1).padStart(3, "0")}`, data.customers), createdAt: new Date().toISOString() };
       commit({ ...data, customers: [customer, ...data.customers] });
@@ -353,7 +395,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           customer_payload: { name: values.name.trim(), contact_number: contactNumber, gender: values.gender?.trim() ?? "", cnic_number: values.cnicNumber?.trim() ?? "" },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this customer.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["customers", "transactions"]);
       }
       commit({ ...data, customers: data.customers.map((customer) => customer.id === id ? { ...customer, name: values.name.trim(), contactNumber, gender: values.gender?.trim() ?? "", cnicNumber: values.cnicNumber?.trim() ?? "" } : customer) });
       return { ok: true };
@@ -365,7 +407,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("delete_customer", { target_workspace_id: workspaceId, target_customer_id: id });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not delete this customer.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["customers", "transactions"]);
       }
       commit({ ...data, customers: data.customers.filter((customer) => customer.id !== id) });
       return { ok: true };
@@ -389,7 +431,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           supplier_payload: { name, contact_number: contactNumber, company, cnic_number: cnicNumber, opening_balance: openingBalance },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not add this supplier.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["suppliers", "transactions", "supplierPayments"]);
       }
       const supplier: Supplier = { id: makeId("supplier"), name, contactNumber, company, cnicNumber, openingBalance, createdAt: new Date().toISOString() };
       commit({ ...data, suppliers: [supplier, ...data.suppliers] });
@@ -415,7 +457,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           supplier_payload: { name, contact_number: contactNumber, company, cnic_number: cnicNumber, opening_balance: openingBalance },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this supplier.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["suppliers", "transactions", "supplierPayments"]);
       }
       commit({ ...data, suppliers: data.suppliers.map((supplier) => supplier.id === id ? { ...supplier, name, contactNumber, company, cnicNumber, openingBalance } : supplier) });
       return { ok: true };
@@ -427,7 +469,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("delete_supplier", { target_workspace_id: workspaceId, target_supplier_id: id });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not delete this supplier.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["suppliers", "transactions", "supplierPayments"]);
       }
       commit({ ...data, suppliers: data.suppliers.filter((supplier) => supplier.id !== id) });
       return { ok: true };
@@ -469,7 +511,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this purchase.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["products", "transactions", "suppliers", "supplierPayments", "capitalEntries"]);
       }
       const { date, month } = getDateParts();
       const transaction: Transaction = { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), name: product.name, productId: product.id, unitCost: values.unitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: values.quantity, amount: total, paidAmount: values.paidAmount, outstandingAmount: total - values.paidAmount, fundingSource: values.fundingSource ?? "other", capitalId, time: "Just now", createdAt: new Date().toISOString(), date, month };
@@ -499,7 +541,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           purchase_payload: { quantity: values.quantity, unit_cost: values.unitCost },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this purchase.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["products", "transactions", "suppliers", "supplierPayments", "capitalEntries"]);
       }
       const updated: Transaction = { ...purchase, quantity: values.quantity, unitCost: values.unitCost, amount: total, outstandingAmount: total - previousPaid };
       commit({ ...data, products: data.products.map((item) => item.id === product.id ? { ...item, inStockQuantity: item.inStockQuantity + quantityDelta, received: item.received + quantityDelta, costPrice: values.unitCost } : item), transactions: data.transactions.map((transaction) => transaction.id === id ? updated : transaction) });
@@ -523,7 +565,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this expense.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["expenses"]);
       }
       const { date, month } = getDateParts();
       const expense: Expense = { ...values, id: makeId("expense"), invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), category: values.category.trim(), description, amount: values.amount, date, month, createdAt: new Date().toISOString() };
@@ -543,7 +585,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           category_name: category,
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not add this expense category.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["expenseCategories"]);
       }
       commit({ ...data, expenseCategories: [...data.expenseCategories, category] });
       return { ok: true };
@@ -569,7 +611,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this expense.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["expenses"]);
       }
       commit({ ...data, expenses: data.expenses.map((expense) => expense.id === id ? { id: expense.id, invoiceNumber: expense.invoiceNumber, category: values.category.trim(), description, amount: values.amount, date: expense.date, month: expense.month, paymentMethod: values.paymentMethod, note: values.note, createdAt: expense.createdAt } : expense) });
       return { ok: true };
@@ -581,7 +623,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("delete_expense", { target_workspace_id: workspaceId, target_expense_id: id });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not delete this expense.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["expenses"]);
       }
       commit({ ...data, expenses: data.expenses.filter((expense) => expense.id !== id) });
       return { ok: true };
@@ -599,7 +641,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           capital_payload: { name, owner_name: values.ownerName?.trim() ?? "", amount: values.amount, note: values.note?.trim() || null },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not add this capital account.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["capitalAccounts", "capitalEntries", "transactions"]);
       }
       const { date, month } = getDateParts();
       const account: CapitalAccount = { id: makeId("capital"), name, ownerName: values.ownerName?.trim() ?? "", createdAt: new Date().toISOString() };
@@ -620,7 +662,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           capital_payload: { capital_id: values.capitalId, type: values.type, amount: values.amount, note: values.note?.trim() || null },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this capital movement.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["capitalEntries", "transactions"]);
       }
       const { date, month } = getDateParts();
       const entry: CapitalEntry = { id: makeId("capital-entry"), ...values, amount: values.amount, note: values.note?.trim(), date, month, createdAt: new Date().toISOString() };
@@ -652,7 +694,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not complete this sale.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["products", "transactions", "customers"]);
       }
       const contactNumber = normalizeContact(values.customerContactNumber);
       const customerCode = normalizeCode(values.customerCode);
@@ -761,7 +803,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this exchange.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["products", "transactions", "customers"]);
       }
 
       const tradeInTotal = values.givenQuantity * values.tradeInUnitValue;
@@ -799,7 +841,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           payment_payload: { supplier_id: values.supplierId, amount: values.amount, note: values.note?.trim() || null, capital_id: values.capitalId ?? null },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this supplier payment.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["supplierPayments", "suppliers", "capitalEntries", "transactions"]);
       }
       const { date } = getDateParts();
       const payment: SupplierPayment = { id: makeId("payment"), supplierId: supplier.id, amount: values.amount, capitalId: values.capitalId, note: values.note?.trim(), date, time: "Just now", createdAt: new Date().toISOString() };
@@ -828,7 +870,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not record this transfer.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["products", "transactions"]);
       }
       const { date, month } = getDateParts();
       const transaction: Transaction = { id: makeId("transfer"), type: "transfer", name: product.name, productId: product.id, party: `${values.fromEntity.trim()} → ${values.toEntity.trim()}`, quantity: values.quantity, amount: values.amount, fromEntity: values.fromEntity.trim(), toEntity: values.toEntity.trim(), transferKind: values.transferKind, time: "Just now", createdAt: new Date().toISOString(), date, month };
@@ -873,7 +915,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
           },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this sale.") };
-        return refreshRemoteStore();
+        return refreshRemoteStore(["products", "transactions", "customers"]);
       }
       const nextProducts = data.products.map((product) => {
         const previousQuantity = previousItems.find((item) => item.productId === product.id)?.quantity ?? 0;
@@ -887,7 +929,8 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       commit({ products: nextProducts, transactions: data.transactions.map((transaction) => transaction.id === id ? updatedSale : transaction), customers: data.customers.map((customer) => customer.id === sale.customerId ? { ...customer, name: values.customerName.trim() } : customer), suppliers: data.suppliers, supplierPayments: data.supplierPayments, expenses: data.expenses, expenseCategories: data.expenseCategories, capitalAccounts: data.capitalAccounts, capitalEntries: data.capitalEntries });
       return { ok: true };
     },
-  }), [data, hydrated, refreshRemoteStore]);
+    });
+  }, [configured, hydrated, remoteData, refreshRemoteStore, storeData]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

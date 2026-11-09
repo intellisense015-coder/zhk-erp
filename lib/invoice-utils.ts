@@ -32,7 +32,7 @@ export type InvoiceDocumentModel = {
   note?: string;
 };
 
-type DatedInvoiceRecord = { id: string; date: string; createdAt?: string };
+type DatedInvoiceRecord = { id: string; date: string; createdAt?: string; invoiceNumber?: string };
 
 function getDateCode(date: string) {
   const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -61,6 +61,9 @@ export function createInvoiceNumber(date: string, records: DatedInvoiceRecord[])
 }
 
 export function getInvoiceNumber(record: DatedInvoiceRecord, records: DatedInvoiceRecord[]) {
+  const authoritativeNumber = record.invoiceNumber?.trim();
+  if (authoritativeNumber) return authoritativeNumber;
+
   const sameDay = records.filter((item) => item.date === record.date).sort(compareRecords);
   const sequence = Math.max(0, sameDay.findIndex((item) => item.id === record.id));
   return formatInvoiceNumber(record.date, sequence);
@@ -68,6 +71,14 @@ export function getInvoiceNumber(record: DatedInvoiceRecord, records: DatedInvoi
 
 export function getInvoiceKindLabel(kind: InvoiceKind) {
   return kind === "sale" ? "Sale" : kind === "purchase" ? "Purchase" : "Expense";
+}
+
+export function formatInvoiceDate(date: string) {
+  const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return date;
+  const [, year, month, day] = match;
+  const monthName = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+  return `${day} ${monthName} ${year}`;
 }
 
 export function buildInvoiceModel(kind: InvoiceKind, record: InvoiceRecord, invoiceNumber: string): InvoiceDocumentModel {
@@ -107,7 +118,7 @@ export function buildInvoiceModel(kind: InvoiceKind, record: InvoiceRecord, invo
   }
 
   const items = getTransactionItems(transaction);
-  const lines = items.length ? items.map((item) => ({ name: item.name, detail: [item.sku, item.color].filter(Boolean).join(" · "), quantity: item.quantity, unitPrice: item.unitSellingPrice, discount: item.discount, amount: item.amount })) : [{ name: transaction.name, quantity: transaction.quantity, unitPrice: transaction.quantity ? transaction.amount / transaction.quantity : transaction.amount, discount: 0, amount: transaction.amount }];
+  const lines = items.length ? items.map((item) => ({ name: item.name, detail: item.color, quantity: item.quantity, unitPrice: item.unitSellingPrice, discount: item.discount, amount: item.amount })) : [{ name: transaction.name, quantity: transaction.quantity, unitPrice: transaction.quantity ? transaction.amount / transaction.quantity : transaction.amount, discount: 0, amount: transaction.amount }];
   const subtotal = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
   const discount = lines.reduce((sum, line) => sum + line.discount, 0);
   const tradeInCredit = transaction.tradeInCredit ?? 0;
