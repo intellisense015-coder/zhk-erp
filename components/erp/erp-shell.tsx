@@ -105,11 +105,11 @@ export function ErpShell({ children }: { children: ReactNode }) {
             router.replace(invitationAcceptPath(invitationId));
             return;
           }
-          if (!hasCompletedOnboarding(storedProfile)) {
-            router.replace("/onboarding");
-            return;
-          }
-          router.replace("/access-denied");
+          // A self-service account may have a completed local profile but no
+          // durable workspace yet (for example after the auth migration or a
+          // cleared browser session). Send it through setup so create_workspace
+          // can provision the owner membership.
+          router.replace("/onboarding");
           return;
         }
 

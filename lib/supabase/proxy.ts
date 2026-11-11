@@ -7,6 +7,13 @@ const publicPaths = new Set([
   '/splash',
   '/login',
   '/forgot-password',
+  '/forgot-pin',
+  '/mfa-recovery',
+  '/mfa',
+  '/api/auth/mfa-recovery/request',
+  '/api/auth/mfa-recovery/complete',
+  '/api/auth/password-recovery/status',
+  '/api/auth/password-recovery/clear',
   '/reset-password',
   '/access-denied',
   '/auth/callback',
@@ -55,14 +62,15 @@ export async function updateSupabaseSession(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (user && (pathname === '/login' || pathname === '/splash')) {
+  if (user && pathname === '/splash') {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  // The former local PIN screen is not a security boundary. Authenticated
-  // users go straight to the ERP; unauthenticated users use the login guard.
-  if (user && (pathname === '/pin' || pathname === '/forgot-pin')) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+  // The former local PIN screen is now the Supabase TOTP enrollment/challenge
+  // surface. Keep old bookmarks useful without ever treating a local PIN as
+  // an authentication boundary.
+  if (user && pathname === '/pin') {
+    return NextResponse.redirect(new URL('/mfa', request.url))
   }
 
   return response

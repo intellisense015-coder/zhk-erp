@@ -1,16 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "../../../lib/supabase/server";
 
+const PASSWORD_RECOVERY_COOKIE = "solexa-password-recovery-user";
+
 function safeInvitationId(value: string | null) {
   return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
     ? value
     : null;
 }
 
-function redirect(request: NextRequest, path: string) {
+function redirect(request: NextRequest, path: string, recoveryUserId?: string) {
   const response = NextResponse.redirect(new URL(path, request.nextUrl.origin));
   response.headers.set("Cache-Control", "no-store, max-age=0");
   response.headers.set("Referrer-Policy", "no-referrer");
+  if (recoveryUserId) {
+    response.cookies.set(PASSWORD_RECOVERY_COOKIE, recoveryUserId, {
+      httpOnly: true,
+      maxAge: 15 * 60,
+      path: "/",
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
+  }
   return response;
 }
 
@@ -46,6 +57,12 @@ export async function GET(request: NextRequest) {
   if (invitationId) {
     const next = `/invite/accept?invitation=${encodeURIComponent(invitationId)}`;
     return redirect(request, `/reset-password?invite=1&next=${encodeURIComponent(next)}`);
+  }
+
+  if (type === "recovery") {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) return redirect(request, "/login?error=recovery_expired");
+    return redirect(request, "/reset-password", userData.user.id);
   }
 
   return redirect(request, "/dashboard");

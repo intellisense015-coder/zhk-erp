@@ -144,8 +144,27 @@ export default function MfaPage() {
       return;
     }
 
-    await supabase.auth.refreshSession();
+    // mfa.verify() returns and persists the upgraded AAL2 session. Refreshing
+    // immediately afterwards can replace it with a normal AAL1 refresh-token
+    // session before the ERP RLS checks run. Confirm the exact stored JWT
+    // instead of performing another refresh here.
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    const { data: verifiedAssurance, error: assuranceError } = sessionData.session
+      ? await supabase.auth.mfa.getAuthenticatorAssuranceLevel(sessionData.session.access_token)
+      : { data: null, error: sessionError };
+    if (sessionError || assuranceError || verifiedAssurance?.currentLevel !== "aal2") {
+      setError("Microsoft Authenticator was verified, but the secure session did not upgrade. Please sign in again.");
+      setLoading(false);
+      return;
+    }
+
     router.replace(returnTo);
+  };
+
+  const signOutAndReturn = async () => {
+    const supabase = createSupabaseBrowserClient();
+    await supabase?.auth.signOut();
+    router.replace("/login");
   };
 
   const isEnrollmentReady = mode === "enroll" && Boolean(qrCode);
@@ -187,6 +206,7 @@ export default function MfaPage() {
         )}
 
         {mode !== "loading" && !isEnrollmentReady && error && <p className="auth-field-error" role="alert">{error}</p>}
+        {mode !== "loading" && <button type="button" className="mfa-signout" onClick={() => void signOutAndReturn()}>Back to sign in</button>}
       </section>
     </main>
   );

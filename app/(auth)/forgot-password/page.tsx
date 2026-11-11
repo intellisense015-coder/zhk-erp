@@ -6,6 +6,20 @@ import { Button } from "../../../components/primitives/button";
 import { Field } from "../../../components/primitives/primitives";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 
+function resetRequestMessage(message: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("redirect") || normalized.includes("allowlist") || normalized.includes("redirect_to")) {
+    return "Supabase rejected the secure callback URL. Add /auth/confirm to Supabase Auth → URL Configuration → Redirect URLs, then request a new link.";
+  }
+  if (normalized.includes("rate")) {
+    return "Supabase is rate-limiting reset emails. Wait a moment and try again.";
+  }
+  if (normalized.includes("smtp") || normalized.includes("email provider") || normalized.includes("send email")) {
+    return "Supabase could not send the reset email. Check the Auth email provider or SMTP settings.";
+  }
+  return "We could not process that request. Please try again.";
+}
+
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -26,11 +40,11 @@ export default function ForgotPasswordPage() {
     }
 
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: `${window.location.origin}/auth/confirm?type=recovery&next=/reset-password`,
     });
     setSending(false);
     if (resetError) {
-      setError("We could not process that request. Please try again.");
+      setError(resetRequestMessage(resetError.message));
       return;
     }
 

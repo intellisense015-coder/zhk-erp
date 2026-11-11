@@ -118,10 +118,18 @@ export async function loadCurrentWorkspaceAccess(
   const { data: userData, error: userError } = await supabase.auth.getUser()
   if (userError || !userData.user) return { data: null, error: 'Your session has expired. Please sign in again.' }
 
-  const buildMembershipQuery = (workspaceId?: string | null) => {
+  type MembershipRow = {
+    workspace_id: string
+    user_id: string
+    member_name?: string | null
+    role: string
+    status?: string | null
+  }
+
+  const buildMembershipQuery = (workspaceId?: string | null, includeProfileFields = true) => {
     let query = supabase
       .from('workspace_members')
-      .select('workspace_id,user_id,member_name,role,status')
+      .select(includeProfileFields ? 'workspace_id,user_id,member_name,role,status' : 'workspace_id,user_id,role,status')
       .eq('user_id', userData.user.id)
       .eq('status', 'active')
       .limit(1)
@@ -129,21 +137,54 @@ export async function loadCurrentWorkspaceAccess(
     return query.maybeSingle()
   }
 
-  let membershipResult = await buildMembershipQuery(requestedWorkspaceId)
-  if (!membershipResult.data && requestedWorkspaceId) {
-    membershipResult = await buildMembershipQuery()
+  const toWorkspaceAccess = (membership: MembershipRow, permissions: Record<string, PermissionValue>): WorkspaceAccess => {
+    const role = membership.role === 'owner' || membership.role === 'manager' ? membership.role : 'staff'
+    return {
+      workspaceId: membership.workspace_id,
+      userId: userData.user.id,
+      email: userData.user.email ?? '',
+      memberName: membership.member_name?.trim() || userData.user.email?.split('@')[0] || 'Workspace member',
+      role,
+      status: 'active',
+      permissions,
+    }
   }
-  if (membershipResult.error) return { data: null, error: membershipResult.error.message }
-  if (!membershipResult.data) return { data: null }
 
-  const membership = membershipResult.data as {
-    workspace_id: string
-    user_id: string
-    member_name?: string | null
-    role: string
-    status: string
+  const readMembership = async (workspaceId?: string | null) => {
+    const preferred = await buildMembershipQuery(workspaceId)
+    if (!preferred.error) return preferred
+    // Keep sign-in working while an older deployment finishes applying the
+    // profile-column migration. The role and workspace id exist in the base
+    // schema and are sufficient for authorization.
+    return buildMembershipQuery(workspaceId, false)
   }
-  const role = membership.role === 'owner' || membership.role === 'manager' ? membership.role : 'staff'
+
+  let membershipResult = await readMembership(requestedWorkspaceId)
+  if (!membershipResult.data && requestedWorkspaceId) {
+    membershipResult = await readMembership()
+  }
+
+  let membership = membershipResult.data as MembershipRow | null
+  if (!membership) {
+    // A workspace can have been created before the access-control migrations
+    // were deployed, leaving the owner row out of workspace_members. Repair
+    // only an owner-owned workspace; invited members can never use this path.
+    let { data: repairedOwner, error: repairError } = await supabase.rpc('ensure_workspace_owner_access', {
+      target_workspace_id: requestedWorkspaceId ?? null,
+    })
+    if (!repairedOwner && requestedWorkspaceId) {
+      const fallbackRepair = await supabase.rpc('ensure_workspace_owner_access', { target_workspace_id: null })
+      repairedOwner = fallbackRepair.data
+      repairError = fallbackRepair.error
+    }
+    const repairedMembership = Array.isArray(repairedOwner) ? repairedOwner[0] : repairedOwner
+    if (repairedMembership) {
+      membership = repairedMembership as MembershipRow
+    } else if (membershipResult.error || repairError) {
+      return { data: null, error: membershipResult.error?.message || repairError?.message }
+    }
+  }
+  if (!membership) return { data: null }
 
   const { data: permissionRows, error: permissionError } = await supabase
     .from('workspace_member_permissions')
@@ -151,7 +192,10 @@ export async function loadCurrentWorkspaceAccess(
     .eq('workspace_id', membership.workspace_id)
     .eq('user_id', userData.user.id)
 
-  if (permissionError) return { data: null, error: permissionError.message }
+  const role = membership.role === 'owner' || membership.role === 'manager' ? membership.role : 'staff'
+  // Owners are full-access by definition, so a permission-table/RLS hiccup
+  // must not turn a valid owner session into the access-denied screen.
+  if (permissionError && role !== 'owner') return { data: null, error: permissionError.message }
 
   const permissions = Object.fromEntries(
     (permissionRows ?? []).map((row) => [
@@ -161,14 +205,6 @@ export async function loadCurrentWorkspaceAccess(
   )
 
   return {
-    data: {
-      workspaceId: membership.workspace_id,
-      userId: userData.user.id,
-      email: userData.user.email ?? '',
-      memberName: membership.member_name?.trim() || userData.user.email?.split('@')[0] || 'Workspace member',
-      role,
-      status: 'active',
-      permissions,
-    },
+    data: toWorkspaceAccess(membership, permissions),
   }
 }

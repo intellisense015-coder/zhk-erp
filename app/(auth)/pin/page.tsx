@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 
-/** Compatibility route for old bookmarks; it never accepts or stores a PIN. */
+/** Compatibility route for old bookmarks; the authenticator flow now lives at /mfa. */
 export default function PinPage() {
   const router = useRouter();
 
@@ -18,7 +18,7 @@ export default function PinPage() {
       }
       const { data } = await supabase.auth.getSession();
       if (!active) return;
-      router.replace(data.session ? "/dashboard" : "/login");
+      router.replace(data.session ? "/mfa" : "/login");
     };
 
     void redirectFromLegacyPinRoute();
