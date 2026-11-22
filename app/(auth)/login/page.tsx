@@ -29,15 +29,21 @@ export default function LoginPage() {
 
   const onSubmit = async ({ email, password }: LoginFormValues) => {
     setAuthError(null);
-    const supabase = createSupabaseBrowserClient();
-    if (!supabase) {
-      setAuthError("Authentication is not configured for this environment.");
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ email, password }),
+    });
+    const result = await response.json().catch(() => null) as { message?: string } | null;
+    if (!response.ok) {
+      setAuthError(result?.message || "Unable to sign in with those details.");
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setAuthError("Unable to sign in with those details.");
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      setAuthError("Authentication is not configured for this environment.");
       return;
     }
 

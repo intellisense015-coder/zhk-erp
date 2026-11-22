@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Button, Modal } from "../../../components/primitives/primitives";
 import { KpiCard } from "../../../components/erp/kpi-card";
-import { Skeleton } from "../../../components/primitives/skeleton";
+import { Skeleton, TableSkeletonRows } from "../../../components/primitives/skeleton";
 import { formatCompactCurrency, formatCurrency, type Product } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
 
@@ -14,7 +14,7 @@ type PaymentLedgerEntry = { id: string; createdAt?: string; date: string; time: 
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { products, transactions, suppliers, supplierPayments, expenses } = useErpStore();
+  const { products, transactions, suppliers, supplierPayments, expenses, hydrated } = useErpStore();
   const [today, setToday] = useState<string | null>(null);
   const [kpi, setKpi] = useState<string | null>(null);
   useEffect(() => { const timer = window.setTimeout(() => setToday(localDate(new Date())), 0); return () => window.clearTimeout(timer); }, []);
@@ -65,7 +65,7 @@ export default function DashboardPage() {
       <div className="dashboard-primary">
       <div className="kpi-grid erp-dashboard-kpis"><Metric label="Today's Sale" value={formatCompactCurrency(todaySale)} note="Customer sales today" icon={<CircleDollarSign size={17} />} onClick={() => setKpi("today")} /><Metric label="Total Sale" value={formatCompactCurrency(totalSale)} note="All recorded customer sales" icon={<CircleDollarSign size={17} />} onClick={() => setKpi("sales")} /><Metric label="Total Stock Value" value={formatCompactCurrency(stockValue)} note="Current inventory valuation" icon={<PackagePlus size={17} />} onClick={() => setKpi("stock")} /><Metric label="Net Profit" value={formatCompactCurrency(netProfit)} note={`${totalSale ? ((netProfit / totalSale) * 100).toFixed(1) : "0.0"}% after expenses`} icon={<TrendingUp size={17} />} tone={netProfit >= 0 ? "success" : "error"} onClick={() => setKpi("profit")} /><Metric label="Total Items" value={String(products.length)} note="Active inventory items" icon={<Boxes size={17} />} onClick={() => setKpi("items")} /></div>
     <div className="dashboard-main-grid">
-      <section className="erp-card dashboard-activity-card"><div className="dashboard-activity-table-wrap"><table className="dashboard-activity-table dashboard-payment-table"><colgroup><col className="dashboard-col-datetime" /><col className="dashboard-col-payment-type" /><col className="dashboard-col-payment-party" /><col className="dashboard-col-payment-amount" /></colgroup><thead><tr><th scope="col">Datetime</th><th scope="col">Type</th><th scope="col">To / From</th><th scope="col" className="text-right">Amount</th></tr></thead><tbody>{paymentLedger.length ? paymentLedger.map((entry) => <tr key={entry.id}><td className="text-[var(--text-muted)]">{formatPaymentDateTime(entry)}</td><td><span className={`activity-type ${entry.direction === "in" ? "value-positive" : "value-negative"}`}>{entry.direction === "in" ? <ArrowUpRight size={12} /> : <ArrowDownLeft size={12} />}{entry.type}</span></td><td>{entry.direction === "in" ? "Received from" : "Paid to"} {entry.party}</td><td className={`text-right font-bold ${entry.direction === "in" ? "value-positive" : "value-negative"}`}>{entry.direction === "in" ? "+" : "-"}{formatCurrency(entry.amount)}</td></tr>) : <tr><td colSpan={4} className="dashboard-activity-empty">No payments recorded yet.</td></tr>}</tbody></table></div></section>
+      <section className="erp-card dashboard-activity-card"><div className="dashboard-activity-table-wrap"><table className="dashboard-activity-table dashboard-payment-table"><colgroup><col className="dashboard-col-datetime" /><col className="dashboard-col-payment-type" /><col className="dashboard-col-payment-party" /><col className="dashboard-col-payment-amount" /></colgroup><thead><tr><th scope="col">Datetime</th><th scope="col">Type</th><th scope="col">To / From</th><th scope="col" className="text-right">Amount</th></tr></thead><tbody>{!hydrated ? <TableSkeletonRows rows={6} cols={4} /> : paymentLedger.length ? paymentLedger.map((entry) => <tr key={entry.id}><td className="text-[var(--text-muted)]">{formatPaymentDateTime(entry)}</td><td><span className={`activity-type ${entry.direction === "in" ? "value-positive" : "value-negative"}`}>{entry.direction === "in" ? <ArrowUpRight size={12} /> : <ArrowDownLeft size={12} />}{entry.type}</span></td><td>{entry.direction === "in" ? "Received from" : "Paid to"} {entry.party}</td><td className={`text-right font-bold ${entry.direction === "in" ? "value-positive" : "value-negative"}`}>{entry.direction === "in" ? "+" : "-"}{formatCurrency(entry.amount)}</td></tr>) : <tr><td colSpan={4} className="dashboard-activity-empty">No payments recorded yet.</td></tr>}</tbody></table></div></section>
     </div>
       </div>
       <LowStockCard lowStock={lowStock} onOpen={() => router.push("/low-stock")} />

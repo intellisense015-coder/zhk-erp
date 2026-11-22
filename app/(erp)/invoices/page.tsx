@@ -4,6 +4,7 @@ import { ArrowLeft, Download, Eye, FileText, Printer } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
 import { InvoiceDocument } from "../../../components/erp/invoice-document";
+import { StandardTablePageSkeleton } from "../../../components/erp/page-skeletons";
 import { DataTable } from "../../../components/primitives/table";
 import { formatCurrency, formatTransactionTime, type Transaction } from "../../../lib/erp-data";
 import { createInvoicePdf } from "../../../lib/invoice-pdf";
@@ -13,7 +14,7 @@ import { useErpStore } from "../../../lib/erp-store";
 type InvoiceListRecord = { kind: InvoiceKind; record: InvoiceRecord };
 
 export default function InvoicesPage() {
-  return <Suspense fallback={<div className="erp-content"><p className="erp-page-subtitle">Loading invoices...</p></div>}><InvoicePageContent /></Suspense>;
+  return <Suspense fallback={<StandardTablePageSkeleton hasEyebrow hasSubtitle actions={0} kpiCount={0} hasSearch={false} cols={6} rows={6} />}><InvoicePageContent /></Suspense>;
 }
 
 function InvoicePageContent() {

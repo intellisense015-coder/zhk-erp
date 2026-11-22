@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../../components/primitives/button";
 import { Notification, type NotificationVariant } from "../../../../components/primitives/notification";
 import { SelectField } from "../../../../components/primitives/primitives";
+import { UsersPageSkeleton } from "../../../../components/erp/page-skeletons";
 import { createSupabaseBrowserClient } from "../../../../lib/supabase/browser";
 import { isSupabaseConfigured } from "../../../../lib/supabase/config";
 import styles from "./users.module.css";
@@ -185,7 +186,7 @@ export default function UsersPage() {
     await loadAccess();
   };
 
-  if (loading) return <div className="erp-content"><div className="erp-page-heading"><div><p className="erp-eyebrow">Workspace access</p><h1 className="erp-page-title">Users & permissions</h1><p className="erp-page-subtitle">Checking owner authorization…</p></div></div><section className={`erp-card ${styles.loadingCard}`} aria-live="polite">Loading secure access controls…</section></div>;
+  if (loading) return <UsersPageSkeleton />;
 
   return <div className="erp-content">
     <div className="erp-page-heading">

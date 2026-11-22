@@ -10,8 +10,6 @@ import {
   UserRound,
   Settings2,
   LogOut,
-  Sun,
-  Moon,
   Menu,
   LayoutDashboard,
   LucideIcon,
@@ -25,6 +23,7 @@ import {
 import { formatCurrency, formatTransactionTime } from "../../lib/erp-data";
 import { useErpStore } from "../../lib/erp-store";
 import { permissionForPath } from "../../lib/supabase/access";
+import { LiquidToggle, NimbusToggleIcons } from "../primitives/liquid-toggle";
 
 // ==========================================
 // Types
@@ -267,24 +266,15 @@ export function OsHeader({
 
         {/* Right: Theme, quick actions, and profile */}
         <div className="header-actions">
-          {/* Mobile Search Icon Trigger */}
-          <button
-            type="button"
-            onClick={() => {
-              setSearchFocused(true);
-              setTimeout(() => searchInputRef.current?.focus(), 50);
-            }}
-            className="mobile-search-btn"
-            aria-label="Open search"
-          >
-            <Search size={16} />
-          </button>
-
           {/* Theme Light/Dark Mode Switcher */}
-          <div className="theme-toggle theme-switch" aria-label="Appearance">
-            <button type="button" onClick={() => applyTheme("light")} className={`theme-option ${!isDarkMode ? "is-active" : ""}`} aria-label="Use light theme" aria-pressed={!isDarkMode}><Sun size={13} /><span>Light</span></button>
-            <button type="button" onClick={() => applyTheme("dark")} className={`theme-option ${isDarkMode ? "is-active" : ""}`} aria-label="Use dark theme" aria-pressed={isDarkMode}><Moon size={13} /><span>Dark</span></button>
-          </div>
+          <LiquidToggle
+            checked={isDarkMode}
+            onCheckedChange={(checked) => applyTheme(checked ? "dark" : "light")}
+            tone={isDarkMode ? "dark" : "light"}
+            size={34}
+            icons={{ off: NimbusToggleIcons.sun, on: NimbusToggleIcons.moon }}
+            label="Toggle dark mode"
+          />
 
           {/* Quick actions */}
           {canShowQuickActions && <div className="dropdown-anchor quick-action-wrapper">
@@ -438,7 +428,8 @@ export function OsHeader({
           display: flex;
           align-items: center;
           gap: 12px;
-          flex-shrink: 0;
+          min-width: 0;
+          flex: 1 1 auto;
         }
 
         .mobile-hamburger-btn {
@@ -462,6 +453,7 @@ export function OsHeader({
         .greeting-box {
           display: flex;
           flex-direction: column;
+          min-width: 0;
           line-height: 1.15;
         }
 
@@ -477,6 +469,9 @@ export function OsHeader({
           color: var(--hdr-text);
           letter-spacing: -0.01em;
           margin: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         /* Center Search */
@@ -1052,9 +1047,13 @@ export function OsHeader({
         .quick-popover {
           width: 320px;
           padding: 12px;
-          background: var(--paper);
-          border-color: var(--line);
-          box-shadow: 0 24px 60px var(--card-shadow);
+          border-radius: 24px;
+          overflow: hidden;
+          background: rgba(0, 0, 0, 0.2);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
         }
 
         .quick-grid {
@@ -1121,17 +1120,14 @@ export function OsHeader({
           right: 0;
           width: 230px;
           padding: 10px;
-          border-radius: 20px;
+          border-radius: 24px;
           overflow: hidden;
           box-sizing: border-box;
-          background: linear-gradient(135deg, color-mix(in srgb, var(--surface-solid) 64%, transparent) 0%, color-mix(in srgb, var(--surface-solid) 42%, transparent) 100%);
-          backdrop-filter: blur(28px) saturate(155%);
-          -webkit-backdrop-filter: blur(28px) saturate(155%);
-          border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
-          border-top-color: color-mix(in srgb, #fff 45%, transparent);
-          border-left-color: color-mix(in srgb, #fff 30%, transparent);
-          border-bottom-color: color-mix(in srgb, #000 20%, transparent);
-          box-shadow: inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.25), inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.1), 0 24px 60px -10px color-mix(in srgb, var(--text-primary) 22%, transparent);
+          background: rgba(0, 0, 0, 0.2);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
         }
 
         .glass-specular-spline {

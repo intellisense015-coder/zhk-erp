@@ -5,7 +5,6 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  ArrowRightLeft,
   BarChart3,
   Bell,
   Boxes,
@@ -76,7 +75,6 @@ const DEFAULT_NAV_GROUPS: NavGroupItem[] = [
     icon: PackagePlus,
     items: [
       { label: "Purchases", href: "/purchases", icon: Receipt, permissionKey: "purchases" },
-      { label: "Transfers", href: "/transfers", icon: ArrowRightLeft, permissionKey: "transfers" },
       { label: "Low stock", href: "/low-stock", icon: Bell, permissionKey: "inventory" },
       { label: "Settings", href: "/settings", icon: Settings2, permissionKey: "settings" },
     ],

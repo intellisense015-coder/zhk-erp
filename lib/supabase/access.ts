@@ -47,7 +47,6 @@ const ROUTE_PERMISSIONS: Array<{ prefix: string; permissionKey: string }> = [
   { prefix: '/suppliers', permissionKey: 'suppliers' },
   { prefix: '/expenses', permissionKey: 'expenses' },
   { prefix: '/capital', permissionKey: 'capital' },
-  { prefix: '/transfers', permissionKey: 'transfers' },
   { prefix: '/reports', permissionKey: 'reports' },
   { prefix: '/transactions', permissionKey: 'transactions' },
   { prefix: '/invoices', permissionKey: 'invoices' },
@@ -88,7 +87,6 @@ export function firstPermittedPath(access: WorkspaceAccess) {
   if (firstPermission === 'suppliers') return '/suppliers'
   if (firstPermission === 'expenses') return '/expenses'
   if (firstPermission === 'capital') return '/capital'
-  if (firstPermission === 'transfers') return '/transfers'
   if (firstPermission === 'reports') return '/reports'
   if (firstPermission === 'transactions') return '/transactions'
   if (firstPermission === 'invoices') return '/invoices'

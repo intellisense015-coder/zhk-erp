@@ -5,6 +5,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "../../../components/primitives/button";
 import { Field, Modal, SelectField } from "../../../components/primitives/primitives";
 import { Notification, type NotificationVariant } from "../../../components/primitives/notification";
+import { SettingsPageSkeleton } from "../../../components/erp/page-skeletons";
 import { BUSINESS_PROFILE_STORAGE_KEY, defaultBusinessProfile, type BusinessProfile } from "../../../lib/business-profile";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 import { isSupabaseConfigured } from "../../../lib/supabase/config";
@@ -19,6 +20,7 @@ export default function SettingsPage() {
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ message: string; variant: NotificationVariant } | null>(null);
 
@@ -39,11 +41,15 @@ export default function SettingsPage() {
       setTheme(nextTheme);
       applyTheme(nextTheme);
       if (isSupabaseConfigured()) {
-        void loadRemoteProfile().then((next) => {
-          if (!next) return;
-          setProfile(next);
-          setDraft(next);
-        });
+        void loadRemoteProfile()
+          .then((next) => {
+            if (!next) return;
+            setProfile(next);
+            setDraft(next);
+          })
+          .finally(() => setLoading(false));
+      } else {
+        setLoading(false);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -96,6 +102,8 @@ export default function SettingsPage() {
   };
 
   const toggleTheme = () => { const next = theme === "dark" ? "light" : "dark"; setTheme(next); applyTheme(next); window.localStorage.setItem("solexa-theme", next); };
+
+  if (loading) return <SettingsPageSkeleton />;
 
   return <div className="erp-content"><div className="erp-page-heading"><div><p className="erp-eyebrow">Workspace configuration</p><h1 className="erp-page-title">Settings</h1><p className="erp-page-subtitle">Keep your workspace identity and appearance up to date.</p></div></div><section className="erp-card settings-profile-card settings-minimal-card"><div className="settings-card-heading"><div className="settings-card-icon"><Store size={17} /></div><div><h2 className="erp-card-title">Business profile</h2><p className="erp-card-subtitle">These details are used across your internal workspace.</p></div><Button variant="secondary" className="settings-edit-button" onClick={openEditor}><Pencil size={14} />Edit profile</Button></div><div className="settings-profile-summary settings-profile-summary-clean"><ProfileRow icon={<Store size={15} />} label="Business name" value={profile.businessName || profile.name} /><ProfileRow icon={<span className="settings-row-symbol">◉</span>} label="Owner" value={`${profile.ownerFirstName} ${profile.ownerSecondName}`} /><ProfileRow icon={<span className="settings-row-symbol">@</span>} label="Business email" value={profile.email || "Not set"} /><ProfileRow icon={<span className="settings-row-symbol">#</span>} label="Contact number" value={profile.contactNumber || "Not set"} /><ProfileRow icon={<span className="settings-row-symbol">G</span>} label="Gender" value={profile.gender || "Not set"} /></div><div className="settings-theme-row"><div className="settings-theme-copy"><span className="settings-row-icon">{theme === "dark" ? <Moon size={15} /> : <Sun size={15} />}</span><div><p>Appearance</p><strong>{theme === "dark" ? "Dark mode" : "Light mode"}</strong></div></div><button type="button" className={`settings-theme-toggle ${theme === "dark" ? "is-dark" : ""}`} aria-pressed={theme === "dark"} onClick={toggleTheme}><span>{theme === "dark" ? "Dark" : "Light"}</span><span className="settings-theme-knob" /></button></div>{saved && <p className="settings-success"><Check size={15} />Settings saved to Supabase.</p>}</section><Modal open={editOpen} title="Edit business profile" description="Update the details shown across your Solexa workspace." onClose={() => setEditOpen(false)}><form onSubmit={saveProfile} className="settings-edit-form"><Field label="Business name" value={draft.businessName} onChange={(event) => setDraft((current) => ({ ...current, businessName: event.target.value }))} autoFocus /><div className="grid grid-cols-2 gap-3"><Field label="Owner first name" value={draft.ownerFirstName} onChange={(event) => setDraft((current) => ({ ...current, ownerFirstName: event.target.value }))} textOnly /><Field label="Owner second name" value={draft.ownerSecondName} onChange={(event) => setDraft((current) => ({ ...current, ownerSecondName: event.target.value }))} textOnly /></div><Field label="Business email" type="email" placeholder="name@business.com" value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} /><Field label="Business contact number" type="tel" placeholder="0300 1234567" value={draft.contactNumber} onChange={(event) => setDraft((current) => ({ ...current, contactNumber: event.target.value }))} /><SelectField label="Gender" value={draft.gender} onChange={(event) => setDraft((current) => ({ ...current, gender: event.target.value }))}><option value="">Select gender</option><option value="Male">Male</option><option value="Female">Female</option><option value="Other">Other</option><option value="Prefer not to say">Prefer not to say</option></SelectField>{profileError && <p className="rounded-xl bg-[var(--error-glow)] px-3 py-2 text-[10px] font-bold text-[var(--error)]">{profileError}</p>}<div className="primitive-dialog-actions px-0 pb-0"><Button type="button" variant="secondary" className="cancel-button" onClick={() => setEditOpen(false)}>Cancel</Button><Button type="submit" variant="brand" disabled={saving}>{saving ? "Saving..." : "Save changes"}</Button></div></form></Modal><Notification message={notification?.message} variant={notification?.variant ?? "success"} onDismiss={() => setNotification(null)} /></div>;
 }
