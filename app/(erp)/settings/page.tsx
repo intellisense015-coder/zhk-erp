@@ -6,9 +6,10 @@ import { Button } from "../../../components/primitives/button";
 import { Field, Modal, SelectField } from "../../../components/primitives/primitives";
 import { Notification, type NotificationVariant } from "../../../components/primitives/notification";
 import { SettingsPageSkeleton } from "../../../components/erp/page-skeletons";
-import { BUSINESS_PROFILE_STORAGE_KEY, defaultBusinessProfile, type BusinessProfile } from "../../../lib/business-profile";
+import { defaultBusinessProfile, type BusinessProfile } from "../../../lib/business-profile";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 import { isSupabaseConfigured } from "../../../lib/supabase/config";
+import { loadCurrentWorkspaceAccess } from "../../../lib/supabase/access";
 
 type ThemeMode = "light" | "dark";
 const defaultProfile = defaultBusinessProfile;
@@ -26,16 +27,6 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const storedProfile = window.localStorage.getItem(BUSINESS_PROFILE_STORAGE_KEY);
-      if (storedProfile) {
-        try {
-          const next = { ...defaultProfile, ...JSON.parse(storedProfile) } as BusinessProfile;
-          setProfile(next);
-          setDraft(next);
-        } catch {
-          window.localStorage.removeItem(BUSINESS_PROFILE_STORAGE_KEY);
-        }
-      }
       const storedTheme = window.localStorage.getItem("solexa-theme");
       const nextTheme: ThemeMode = storedTheme === "dark" ? "dark" : "light";
       setTheme(nextTheme);
@@ -69,15 +60,15 @@ export default function SettingsPage() {
     setSaving(true);
     setProfileError(null);
     if (isSupabaseConfigured()) {
-      const workspaceId = window.localStorage.getItem("solexa-workspace-id");
       const supabase = createSupabaseBrowserClient();
-      if (!workspaceId || !supabase) {
+      const access = supabase ? await loadCurrentWorkspaceAccess(supabase) : { data: null };
+      if (!access.data || !supabase) {
         setSaving(false);
         setProfileError("Your workspace session is missing. Please sign in again.");
         return;
       }
       const { error } = await supabase.rpc("update_workspace_profile", {
-        target_workspace_id: workspaceId,
+        target_workspace_id: access.data.workspaceId,
         profile_payload: {
           business_name: next.businessName,
           owner_first_name: next.ownerFirstName,
@@ -95,7 +86,6 @@ export default function SettingsPage() {
     }
     setSaving(false);
     setProfile(next);
-    window.localStorage.setItem(BUSINESS_PROFILE_STORAGE_KEY, JSON.stringify(next));
     setSaved(true);
     setEditOpen(false);
     setNotification({ variant: "success", message: "Business profile saved securely." });
@@ -112,12 +102,12 @@ function applyTheme(theme: ThemeMode) { document.documentElement.classList.toggl
 function ProfileRow({ icon, label, value }: { icon: ReactNode; label: string; value: string }) { return <div className="settings-profile-row"><span className="settings-row-icon">{icon}</span><div><p>{label}</p><strong>{value}</strong></div></div>; }
 
 async function loadRemoteProfile(): Promise<BusinessProfile | null> {
-  const workspaceId = window.localStorage.getItem("solexa-workspace-id");
   const supabase = createSupabaseBrowserClient();
-  if (!workspaceId || !supabase) return null;
-  const { data, error } = await supabase.from("workspaces").select("business_name,owner_first_name,owner_second_name,owner_email,owner_contact_number,owner_gender").eq("id", workspaceId).maybeSingle();
+  if (!supabase) return null;
+  const access = await loadCurrentWorkspaceAccess(supabase);
+  if (!access.data) return null;
+  const { data, error } = await supabase.from("workspaces").select("business_name,owner_first_name,owner_second_name,owner_email,owner_contact_number,owner_gender").eq("id", access.data.workspaceId).maybeSingle();
   if (error || !data) return null;
   const next: BusinessProfile = { name: data.business_name, businessName: data.business_name, ownerFirstName: data.owner_first_name, ownerSecondName: data.owner_second_name, email: data.owner_email, contactNumber: data.owner_contact_number, gender: data.owner_gender };
-  window.localStorage.setItem(BUSINESS_PROFILE_STORAGE_KEY, JSON.stringify(next));
   return next;
 }

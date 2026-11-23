@@ -31,7 +31,7 @@ export function Field({ label, hint, className = "", textOnly = false, numberOnl
     if ((inferredTextOnly && /\d/.test(pasted)) || (isNumberInput && type === "number" && /[^\d.]/.test(pasted)) || (inferredNumberOnly && type !== "number" && /[^\d+().\s-]/.test(pasted))) event.preventDefault();
     onPaste?.(event);
   };
-  return <label className={cn("block", className)}>{label ? <span className="mb-2 block text-[10px] font-semibold text-[var(--text-primary)]">{label}</span> : null}<input className="floating-input h-11 w-full rounded-[14px] px-4 text-[10px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" type={type} onChange={handleChange} onPaste={handlePaste} {...props} />{hint ? <span className="mt-1.5 block text-[10px] text-[var(--error)]">{hint}</span> : null}</label>;
+  return <label className={cn("block", className)}>{label ? <span className="mb-2 block text-[10px] font-semibold text-[var(--text-primary)]">{label}</span> : null}<input className="floating-input h-11 w-full rounded-[14px] px-4 text-[10px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" type={type} onChange={handleChange} onPaste={handlePaste} {...props} />{hint ? <span className="auth-field-error">{hint}</span> : null}</label>;
 }
 
 type SelectFieldProps = SelectHTMLAttributes<HTMLSelectElement> & { label?: string; hint?: string; searchable?: boolean; searchPlaceholder?: string; children: ReactNode };

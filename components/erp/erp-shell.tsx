@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { OsHeader } from "../os/header";
 import { OsSidebar } from "../os/sidebar";
 import { clearLocalErpSnapshots, ErpStoreProvider } from "../../lib/erp-store";
-import { getOwnerDisplayName, hasCompletedOnboarding, readBusinessProfile, type BusinessProfile } from "../../lib/business-profile";
+import { defaultBusinessProfile, getOwnerDisplayName, readBusinessProfile, type BusinessProfile } from "../../lib/business-profile";
 import { createSupabaseBrowserClient } from "../../lib/supabase/browser";
 import { isLocalOnlyMode, isSupabaseConfigured } from "../../lib/supabase/config";
 import { canViewPermission, editablePermissionKeys, firstPermittedPath, invitationAcceptPath, loadCurrentWorkspaceAccess, passwordSetupPath, permissionForPath, safeInvitationId, visiblePermissionKeys, type WorkspaceAccess } from "../../lib/supabase/access";
@@ -21,6 +21,26 @@ function passwordWasInitialized(user: { user_metadata?: Record<string, unknown> 
 
 function roleLabel(role: WorkspaceAccess["role"] | undefined) {
   return role ? role.charAt(0).toUpperCase() + role.slice(1) : "Workspace member";
+}
+
+function businessProfileFromWorkspace(workspace: {
+  business_name: string;
+  owner_first_name: string;
+  owner_second_name: string;
+  owner_email: string;
+  owner_contact_number: string;
+  owner_gender: string;
+}): BusinessProfile {
+  return {
+    ...defaultBusinessProfile,
+    name: workspace.business_name,
+    businessName: workspace.business_name,
+    ownerFirstName: workspace.owner_first_name,
+    ownerSecondName: workspace.owner_second_name,
+    email: workspace.owner_email,
+    contactNumber: workspace.owner_contact_number,
+    gender: workspace.owner_gender,
+  };
 }
 
 export function ErpShell({ children }: { children: ReactNode }) {
@@ -38,8 +58,7 @@ export function ErpShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     const verifyAccess = async () => {
-      const storedProfile = readBusinessProfile();
-      const workspaceId = window.localStorage.getItem("solexa-workspace-id");
+      let resolvedProfile: BusinessProfile | null = null;
 
       if (isSupabaseConfigured()) {
         // Never render ERP content from a legacy implicit-flow invitation.
@@ -98,7 +117,7 @@ export function ErpShell({ children }: { children: ReactNode }) {
           return;
         }
 
-        const accessResult = await loadCurrentWorkspaceAccess(supabase, workspaceId);
+        const accessResult = await loadCurrentWorkspaceAccess(supabase);
         if (!active) return;
         if (!accessResult.data) {
           if (invitationId) {
@@ -114,12 +133,15 @@ export function ErpShell({ children }: { children: ReactNode }) {
         }
 
         const access = accessResult.data;
-        if (access.role === "owner" && !hasCompletedOnboarding(storedProfile)) {
-          router.replace("/onboarding");
-          return;
+        const { data: workspaceProfile } = await supabase
+          .from("workspaces")
+          .select("business_name,owner_first_name,owner_second_name,owner_email,owner_contact_number,owner_gender")
+          .eq("id", access.workspaceId)
+          .maybeSingle();
+        if (workspaceProfile) {
+          resolvedProfile = businessProfileFromWorkspace(workspaceProfile);
         }
 
-        window.localStorage.setItem("solexa-workspace-id", access.workspaceId);
         const requiredPermission = permissionForPath(pathname);
         if (requiredPermission && !canViewPermission(access, requiredPermission)) {
           router.replace(firstPermittedPath(access) ?? "/access-denied");
@@ -131,13 +153,17 @@ export function ErpShell({ children }: { children: ReactNode }) {
         setConfigurationError(true);
         setAccessChecked(true);
         return;
-      } else if (!hasCompletedOnboarding(storedProfile)) {
+      } else {
+        resolvedProfile = readBusinessProfile();
+      }
+
+      if (!isSupabaseConfigured() && !resolvedProfile) {
         router.replace("/onboarding");
         return;
       }
 
       if (!active) return;
-      setProfile(storedProfile);
+      setProfile(resolvedProfile);
       setCheckedPath(pathname);
       setAccessChecked(true);
     };
@@ -150,7 +176,6 @@ export function ErpShell({ children }: { children: ReactNode }) {
       const supabase = createSupabaseBrowserClient();
       await supabase?.auth.signOut();
       clearLocalErpSnapshots();
-      window.localStorage.removeItem("solexa-workspace-id");
       router.replace("/login");
     })();
   };
@@ -163,5 +188,5 @@ export function ErpShell({ children }: { children: ReactNode }) {
   const userRole = roleLabel(workspaceAccess?.role);
   if (configurationError) return <div className="solexa-refresh-cover" role="alert" aria-label="Secure backend configuration required"><Image src="/solexa-logo.png" alt="Solexa" width={64} height={64} priority className="solexa-refresh-logo" /><strong>solexa</strong><span>secure backend configuration required</span></div>;
   if (!accessChecked || (isSupabaseConfigured() && checkedPath !== pathname)) return <div className="solexa-refresh-cover" role="status" aria-label="Checking workspace access"><Image src="/solexa-logo.png" alt="Solexa" width={64} height={64} priority className="solexa-refresh-logo" /><strong>solexa</strong><span>checking workspace access</span></div>;
-  return <ErpStoreProvider><div className="erp-shell"><OsSidebar currentPath={pathname} mobileOpen={mobileOpen} onMobileOpenChange={setMobileOpen} onCollapsedChange={setSidebarCollapsed} onNavigate={navigate} onSignOut={signOut} userName={userName} userRole={userRole} appName="Solexa" visiblePermissionKeys={visibleKeys} /><main className={`erp-main ${sidebarCollapsed ? "sidebar-collapsed" : "sidebar-expanded"}`}><OsHeader userName={userName} userRole={userRole} pageTitle={pathname.slice(1) || "dashboard"} onOpenMobileMenu={() => setMobileOpen(true)} onNavigate={navigate} onSignOut={signOut} visiblePermissionKeys={visibleKeys} editablePermissionKeys={editableKeys} /><div key={pathname} className="erp-route-transition">{children}</div></main>{showRefreshCover && <div className="solexa-refresh-cover" role="status" aria-label="Loading Solexa"><Image src="/solexa-logo.png" alt="Solexa" width={64} height={64} priority className="solexa-refresh-logo" /><strong>solexa</strong><span>by intellisense</span></div>}</div></ErpStoreProvider>;
+  return <ErpStoreProvider workspaceId={workspaceAccess?.workspaceId} ownerContactNumber={profile?.contactNumber}><div className="erp-shell"><OsSidebar currentPath={pathname} mobileOpen={mobileOpen} onMobileOpenChange={setMobileOpen} onCollapsedChange={setSidebarCollapsed} onNavigate={navigate} onSignOut={signOut} userName={userName} userRole={userRole} appName="Solexa" visiblePermissionKeys={visibleKeys} /><main className={`erp-main ${sidebarCollapsed ? "sidebar-collapsed" : "sidebar-expanded"}`}><OsHeader userName={userName} userRole={userRole} pageTitle={pathname.slice(1) || "dashboard"} onOpenMobileMenu={() => setMobileOpen(true)} onNavigate={navigate} onSignOut={signOut} visiblePermissionKeys={visibleKeys} editablePermissionKeys={editableKeys} /><div key={pathname} className="erp-route-transition">{children}</div></main>{showRefreshCover && <div className="solexa-refresh-cover" role="status" aria-label="Loading Solexa"><Image src="/solexa-logo.png" alt="Solexa" width={64} height={64} priority className="solexa-refresh-logo" /><strong>solexa</strong><span>by intellisense</span></div>}</div></ErpStoreProvider>;
 }

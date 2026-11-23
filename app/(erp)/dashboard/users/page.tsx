@@ -8,6 +8,7 @@ import { SelectField } from "../../../../components/primitives/primitives";
 import { UsersPageSkeleton } from "../../../../components/erp/page-skeletons";
 import { createSupabaseBrowserClient } from "../../../../lib/supabase/browser";
 import { isSupabaseConfigured } from "../../../../lib/supabase/config";
+import { loadCurrentWorkspaceAccess } from "../../../../lib/supabase/access";
 import styles from "./users.module.css";
 
 type MemberRole = "owner" | "manager" | "staff";
@@ -88,17 +89,18 @@ export default function UsersPage() {
 
   const loadAccess = async () => {
     const supabase = createSupabaseBrowserClient();
-    const storedWorkspaceId = window.localStorage.getItem("solexa-workspace-id");
-    setWorkspaceId(storedWorkspaceId);
-    if (!isSupabaseConfigured() || !supabase || !storedWorkspaceId) {
+    const access = supabase ? await loadCurrentWorkspaceAccess(supabase) : { data: null };
+    const currentWorkspaceId = access.data?.workspaceId ?? null;
+    setWorkspaceId(currentWorkspaceId);
+    if (!isSupabaseConfigured() || !supabase || !currentWorkspaceId) {
       setLoading(false);
       setNotice({ variant: "error", message: "A secure Supabase workspace is required." });
       return;
     }
 
     const [memberResult, invitationResult, catalogResult] = await Promise.all([
-      supabase.rpc("list_workspace_access_with_profile", { target_workspace_id: storedWorkspaceId }),
-      supabase.rpc("list_workspace_invitations_with_profile", { target_workspace_id: storedWorkspaceId }),
+      supabase.rpc("list_workspace_access_with_profile", { target_workspace_id: currentWorkspaceId }),
+      supabase.rpc("list_workspace_invitations_with_profile", { target_workspace_id: currentWorkspaceId }),
       supabase.from("permission_catalog").select("permission_key,label,description").order("sort_order"),
     ]);
     const firstError = memberResult.error || invitationResult.error || catalogResult.error;

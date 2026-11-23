@@ -8,6 +8,7 @@ import { loadSupabaseResource, loadSupabaseTransactionPage, type RemoteResource,
 import type { Transaction } from "../erp-data";
 import { createSupabaseBrowserClient } from "./browser";
 import { isSupabaseConfigured } from "./config";
+import { loadCurrentWorkspaceAccess } from "./access";
 
 export const remoteResources = [
   "products",
@@ -56,12 +57,20 @@ export function useRemoteTransactionPage(filters: TransactionPageFilters) {
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
 
   useEffect(() => {
+    let active = true;
     const timer = window.setTimeout(() => {
       if (!isSupabaseConfigured()) return;
-      setWorkspaceId(window.localStorage.getItem("solexa-workspace-id"));
-      setSupabase(createSupabaseBrowserClient());
+      const client = createSupabaseBrowserClient();
+      setSupabase(client);
+      if (!client) return;
+      void loadCurrentWorkspaceAccess(client).then((result) => {
+        if (active) setWorkspaceId(result.data?.workspaceId ?? null);
+      });
     }, 0);
-    return () => window.clearTimeout(timer);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   const query = useQuery({

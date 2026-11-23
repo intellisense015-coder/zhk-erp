@@ -1,27 +1,24 @@
 .page {
   min-height: 100vh;
-  background: var(--bg);
+  background: var(--bg-primary);
+  color: var(--text-primary);
   padding: 20px;
+  transition: background-color var(--transition-normal), color var(--transition-normal);
 }
 
 .page :global(.auth-theme-toggle) {
   min-width: 106px;
+  width: 106px;
+  height: 40px;
+}
+
+.page :global(.auth-theme-toggle .theme-toggle-handle) {
+  width: 32px;
   height: 32px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--surface-soft);
-  padding: 2px;
 }
 
-.page :global(.auth-theme-toggle span) {
-  height: 28px;
-  border-radius: 9px;
-}
-
-.page :global(.auth-theme-toggle span.is-active) {
-  background: var(--surface-solid);
-  color: var(--primary);
-  box-shadow: var(--shadow-tiny);
+.page :global(.auth-theme-toggle .theme-toggle-label) {
+  height: 32px;
 }
 
 .shell {
@@ -124,7 +121,7 @@
   max-width: 560px;
   border: 0;
   border-radius: 24px;
-  background: var(--surface);
+  background: var(--surface-solid);
   padding: clamp(24px, 4vw, 34px);
   box-shadow: var(--shadow-out);
 }
@@ -210,7 +207,19 @@
 .form :global(.floating-input),
 .form :global(.custom-select-trigger) {
   border: 0 !important;
+  background: var(--surface-soft-2) !important;
+  color: var(--text-primary) !important;
   box-shadow: none;
+}
+
+.form :global(.floating-input:focus),
+.form :global(.custom-select-trigger:focus) {
+  background: var(--surface-soft-2) !important;
+  box-shadow: 0 0 0 3px var(--primary-glow) !important;
+}
+
+.form :global(.floating-input::placeholder) {
+  color: var(--text-muted) !important;
 }
 
 .fields {
@@ -235,6 +244,8 @@
 .actions > button {
   min-height: 42px;
   border-radius: 12px;
+  border: 0 !important;
+  outline: 0;
 }
 
 .actions :global(.brand-button) {
@@ -248,7 +259,7 @@
   margin: 18px auto 0;
   border: 0;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--error);
   cursor: pointer;
   font-size: 10px;
   font-weight: 650;
@@ -256,6 +267,14 @@
 
 .signOutButton:hover {
   color: var(--error);
+  opacity: .8;
+}
+
+.submitError {
+  margin: 16px 0 0;
+  color: var(--error);
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .signOutButton:disabled {

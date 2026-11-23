@@ -17,6 +17,10 @@ export type WorkspaceAccess = {
   permissions: Record<string, PermissionValue>
 }
 
+type WorkspaceAccessOptions = {
+  repairOwner?: boolean
+}
+
 export const ERP_PERMISSION_ORDER = [
   'dashboard',
   'pos',
@@ -112,6 +116,7 @@ export function passwordSetupPath(invitationId: string) {
 export async function loadCurrentWorkspaceAccess(
   supabase: SupabaseClient,
   requestedWorkspaceId?: string | null,
+  options: WorkspaceAccessOptions = {},
 ): Promise<{ data: WorkspaceAccess | null; error?: string }> {
   const { data: userData, error: userError } = await supabase.auth.getUser()
   if (userError || !userData.user) return { data: null, error: 'Your session has expired. Please sign in again.' }
@@ -164,6 +169,8 @@ export async function loadCurrentWorkspaceAccess(
 
   let membership = membershipResult.data as MembershipRow | null
   if (!membership) {
+    if (options.repairOwner === false) return { data: null }
+
     // A workspace can have been created before the access-control migrations
     // were deployed, leaving the owner row out of workspace_members. Repair
     // only an owner-owned workspace; invited members can never use this path.

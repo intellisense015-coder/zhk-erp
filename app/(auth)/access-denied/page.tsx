@@ -12,7 +12,6 @@ export default function AccessDeniedPage() {
   const signOut = async () => {
     await createSupabaseBrowserClient()?.auth.signOut();
     clearLocalErpSnapshots();
-    window.localStorage.removeItem("solexa-workspace-id");
     router.replace("/login");
   };
 

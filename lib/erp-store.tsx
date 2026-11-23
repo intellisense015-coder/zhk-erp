@@ -100,10 +100,10 @@ function makeUniqueCustomerCode(requested: string, customers: Customer[], curren
   return candidate;
 }
 
-export function ErpStoreProvider({ children }: { children: ReactNode }) {
+export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId = null, ownerContactNumber = "" }: { children: ReactNode; workspaceId?: string | null; ownerContactNumber?: string }) {
   const [storeData, setData] = useState<StoreData>(emptyStore);
   const [localHydrated, setLocalHydrated] = useState(false);
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(requestedWorkspaceId);
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
   const configured = isSupabaseConfigured();
   const queryClient = useQueryClient();
@@ -139,7 +139,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     const timer = window.setTimeout(async () => {
       let localData = emptyStore;
       if (configured) {
-        setWorkspaceId(window.localStorage.getItem("solexa-workspace-id"));
+        setWorkspaceId(requestedWorkspaceId);
         setSupabase(createSupabaseBrowserClient());
         return;
       }
@@ -198,7 +198,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       setLocalHydrated(true);
     }, 0);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [configured]);
+  }, [configured, requestedWorkspaceId]);
 
   const hydrated = configured ? Boolean(remoteData) : localHydrated;
 
@@ -211,14 +211,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
   const normalizeCode = (value: string) => value.trim().toUpperCase().replace(/\s+/g, "");
   const normalizeName = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
   const normalizeSku = (value: string) => value.trim().toUpperCase().replace(/\s+/g, "");
-  const ownerContact = typeof window !== "undefined" ? (() => {
-    try {
-      const profile = JSON.parse(window.localStorage.getItem("solexa-business-profile") || "null") as { contactNumber?: string } | null;
-      return normalizeContact(profile?.contactNumber ?? "");
-    } catch {
-      return "";
-    }
-  })() : "";
+  const ownerContact = normalizeContact(ownerContactNumber);
 
   const refreshRemoteStore = useCallback(async (resources: RemoteResource[] = [...remoteResources]): Promise<StoreResult> => {
     if (!configured) return { ok: true };
@@ -252,7 +245,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (!existingSupplier && data.customers.some((customer) => customer.contactNumber === vendorContact)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
       const supplier = existingSupplier ?? { id: makeId("supplier"), name: vendorName, contactNumber: vendorContact, company: vendorCompany, createdAt: new Date().toISOString() };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("create_product", {
@@ -309,7 +301,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const existingProduct = data.products.find((product) => product.id === id);
       if (!existingProduct) return { ok: false, message: "This product no longer exists." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("update_product", {
@@ -347,7 +338,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     },
     deleteProduct: async (id) => {
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("delete_product", { target_workspace_id: workspaceId, target_product_id: id });
@@ -365,7 +355,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (data.customers.some((customer) => customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number is already assigned to another customer." };
       if (data.suppliers.some((supplier) => supplier.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a supplier and cannot be reused for a customer." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("create_customer", {
@@ -386,7 +375,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (data.customers.some((customer) => customer.id !== id && customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number is already assigned to another customer." };
       if (data.suppliers.some((supplier) => supplier.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a supplier and cannot be reused for a customer." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("update_customer", {
@@ -402,7 +390,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     },
     deleteCustomer: async (id) => {
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("delete_customer", { target_workspace_id: workspaceId, target_customer_id: id });
@@ -423,7 +410,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (data.suppliers.some((supplier) => supplier.contactNumber === contactNumber)) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
       if (data.customers.some((customer) => customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("create_supplier", {
@@ -448,7 +434,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (data.suppliers.some((supplier) => supplier.id !== id && supplier.contactNumber === contactNumber)) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
       if (data.customers.some((customer) => customer.contactNumber === contactNumber)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("update_supplier", {
@@ -464,7 +449,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     },
     deleteSupplier: async (id) => {
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("delete_supplier", { target_workspace_id: workspaceId, target_supplier_id: id });
@@ -492,7 +476,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (values.fundingSource === "capital" && !capitalId) return { ok: false, message: "Choose a capital account for this purchase." };
       if (capitalId && values.paidAmount > getCapitalSummary(capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available) return { ok: false, message: "The purchase payment exceeds the available capital." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("record_purchase", {
@@ -532,7 +515,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const quantityDelta = values.quantity - purchase.quantity;
       if (product.inStockQuantity + quantityDelta < 0) return { ok: false, message: "The edited purchase would make stock negative." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("update_purchase", {
@@ -551,7 +533,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const description = values.description.trim();
       if (!description || !values.category.trim() || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Category, description, and an amount greater than zero are required." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("record_expense", {
@@ -577,7 +558,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (!category) return { ok: false, message: "Enter a category name." };
       if (data.expenseCategories.some((item) => normalizeName(item) === normalizeName(category))) return { ok: false, message: "This expense category already exists." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("create_expense_category", {
@@ -596,7 +576,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       const description = values.description.trim();
       if (!description || !values.category.trim() || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Category, description, and an amount greater than zero are required." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("update_expense", {
@@ -618,7 +597,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
     },
     deleteExpense: async (id) => {
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("delete_expense", { target_workspace_id: workspaceId, target_expense_id: id });
@@ -633,7 +611,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (!name || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Enter a capital name and an opening amount greater than zero." };
       if (data.capitalAccounts.some((account) => normalizeName(account.name) === normalizeName(name))) return { ok: false, message: "A capital account with this name already exists." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("create_capital_account", {
@@ -654,7 +631,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (!account || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Choose a capital account and enter an amount greater than zero." };
       if (values.type === "withdrawal" && values.amount > getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available) return { ok: false, message: "The withdrawal exceeds the available capital." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("create_capital_entry", {
@@ -675,7 +651,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
         const requestedCustomerCode = normalizeCode(values.customerCode) || `CUST-${String(data.customers.length + 1).padStart(3, "0")}`;
         const selectedCustomer = values.customerId ? data.customers.find((customer) => customer.id === values.customerId) : undefined;
         const safeCustomerCode = makeUniqueCustomerCode(requestedCustomerCode, data.customers, selectedCustomer?.id);
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("record_sale", {
@@ -776,7 +751,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       }
 
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("record_exchange", {
@@ -833,7 +807,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (values.amount > outstanding) return { ok: false, message: "Payment cannot exceed the supplier's outstanding balance." };
       if (values.capitalId && values.amount > getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available) return { ok: false, message: "The supplier payment exceeds the available capital." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("record_supplier_payment", {
@@ -855,7 +828,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       if (values.quantity > product.inStockQuantity) return { ok: false, message: `${product.name} only has ${product.inStockQuantity} units available.` };
       if (!values.fromEntity.trim() || !values.toEntity.trim() || values.fromEntity.trim().toLowerCase() === values.toEntity.trim().toLowerCase()) return { ok: false, message: "Choose two different entities." };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("record_transfer", {
@@ -903,7 +875,6 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       }).find(Boolean);
       if (stockIssue) return { ok: false, message: stockIssue };
       if (isSupabaseConfigured()) {
-        const workspaceId = window.localStorage.getItem("solexa-workspace-id");
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
         const { error } = await supabase.rpc("update_sale", {
@@ -930,7 +901,7 @@ export function ErpStoreProvider({ children }: { children: ReactNode }) {
       return { ok: true };
     },
     });
-  }, [configured, hydrated, remoteData, refreshRemoteStore, storeData]);
+  }, [configured, hydrated, ownerContact, remoteData, refreshRemoteStore, storeData, workspaceId]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

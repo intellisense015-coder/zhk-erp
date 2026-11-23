@@ -7,31 +7,44 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "../../../components/primitives/button";
 import { ThemeToggle } from "../../../components/auth/auth-shell";
 import { Field, SelectField } from "../../../components/primitives/primitives";
-import {
-  BUSINESS_PROFILE_STORAGE_KEY,
-  defaultBusinessProfile,
-  readBusinessProfile,
-  type BusinessProfile,
-} from "../../../lib/business-profile";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
+import { loadCurrentWorkspaceAccess } from "../../../lib/supabase/access";
 import styles from "./onboarding.module.css";
 
-type OnboardingDraft = Pick<
-  BusinessProfile,
-  | "businessName"
-  | "ownerFirstName"
-  | "ownerSecondName"
-  | "email"
-  | "contactNumber"
-  | "gender"
->;
+type OnboardingDraft = {
+  businessName: string;
+  ownerFirstName: string;
+  ownerSecondName: string;
+  email: string;
+  contactNumber: string;
+  gender: string;
+};
 type FieldErrors = Partial<Record<keyof OnboardingDraft, string>>;
 
-function workspaceCreationErrorMessage(error: { message?: string } | null) {
+type WorkspaceCreationError = { code?: string; message?: string; details?: string; hint?: string };
+
+function workspaceCreationErrorMessage(error: WorkspaceCreationError | null) {
   const message = error?.message?.toLowerCase() ?? "";
-  if (message.includes("email")) return "A workspace already exists with this email.";
-  if (message.includes("phone") || message.includes("contact")) return "A workspace already exists with this phone number.";
-  return "We could not create your secure workspace. Please try again.";
+  if (message.includes("workspace already exists") || error?.code === "23505") {
+    return "A workspace already exists with this email and phone number.";
+  }
+  if (error?.code === "pgrst202" || message.includes("create_workspace") && message.includes("does not exist")) {
+    return "Workspace creation is not installed in Supabase. Apply the latest database migrations, then try again.";
+  }
+  if (error?.code === "42501" || message.includes("permission denied") || message.includes("not authorized")) {
+    return "Your Supabase account is not allowed to create workspaces. Check the authenticated RPC permission.";
+  }
+  if (message.includes("authentication is required") || message.includes("jwt") || message.includes("auth.uid")) {
+    return "Your sign-in session has expired. Sign out, sign in again, complete MFA, and retry.";
+  }
+  if (message.includes("microsoft authenticator") || message.includes("mfa") || message.includes("aal2")) {
+    return "Complete Microsoft Authenticator verification before creating the workspace.";
+  }
+  if (error?.message) {
+    const detail = error.message.replace(/^.*?ERROR:\s*/i, "").trim();
+    if (detail.length <= 180) return `Workspace creation failed: ${detail}`;
+  }
+  return "Workspace creation failed because Supabase did not return a workspace ID. Check the create_workspace RPC and its migrations.";
 }
 
 const emptyDraft: OnboardingDraft = {
@@ -54,24 +67,6 @@ export default function OnboardingPage() {
   const [checkingMembership, setCheckingMembership] = useState(true);
 
   useEffect(() => {
-    const profile = readBusinessProfile();
-    if (!profile) return;
-
-    const frame = window.requestAnimationFrame(() => {
-      setDraft({
-        businessName: profile.businessName || profile.name || "",
-        ownerFirstName: profile.ownerFirstName || "",
-        ownerSecondName: profile.ownerSecondName || "",
-        email: profile.email || "",
-        contactNumber: profile.contactNumber || "",
-        gender: profile.gender || "",
-      });
-    });
-
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
-
-  useEffect(() => {
     let active = true;
 
     const resolveExistingWorkspace = async () => {
@@ -91,49 +86,17 @@ export default function OnboardingPage() {
         return;
       }
 
-      const { data: memberships, error: membershipError } = await supabase
-        .from("workspace_members")
-        .select("workspace_id")
-        .limit(1);
-
       if (!active) return;
-      if (membershipError) {
+      const accessResult = await loadCurrentWorkspaceAccess(supabase, null, { repairOwner: false });
+      if (accessResult.error) {
         setSubmitError("We could not check your workspace access. Please try again.");
         setCheckingMembership(false);
         return;
       }
-
-      const workspaceId = memberships?.[0]?.workspace_id as string | undefined;
-      if (!workspaceId) {
+      if (!accessResult.data) {
         setCheckingMembership(false);
         return;
       }
-
-      const { data: workspace, error: workspaceError } = await supabase
-        .from("workspaces")
-        .select("business_name, owner_first_name, owner_second_name, owner_email, owner_contact_number, owner_gender")
-        .eq("id", workspaceId)
-        .maybeSingle();
-
-      if (!active) return;
-      if (workspaceError || !workspace) {
-        setSubmitError("We could not load your workspace details. Please try again.");
-        setCheckingMembership(false);
-        return;
-      }
-
-      const profile: BusinessProfile = {
-        ...defaultBusinessProfile,
-        name: workspace.business_name,
-        businessName: workspace.business_name,
-        ownerFirstName: workspace.owner_first_name,
-        ownerSecondName: workspace.owner_second_name,
-        email: workspace.owner_email,
-        contactNumber: workspace.owner_contact_number,
-        gender: workspace.owner_gender,
-      };
-      window.localStorage.setItem(BUSINESS_PROFILE_STORAGE_KEY, JSON.stringify(profile));
-      window.localStorage.setItem("solexa-workspace-id", workspaceId);
       router.replace("/dashboard");
     };
 
@@ -182,8 +145,6 @@ export default function OnboardingPage() {
     setSigningOut(true);
     const supabase = createSupabaseBrowserClient();
     await supabase?.auth.signOut();
-    window.localStorage.removeItem(BUSINESS_PROFILE_STORAGE_KEY);
-    window.localStorage.removeItem("solexa-workspace-id");
     router.replace("/login");
   };
 
@@ -198,14 +159,11 @@ export default function OnboardingPage() {
 
     setSaving(true);
     setSubmitError(null);
-    const profile: BusinessProfile = {
-      ...defaultBusinessProfile,
-      ...draft,
-      name: draft.businessName.trim(),
+    const profile = {
       businessName: draft.businessName.trim(),
       ownerFirstName: draft.ownerFirstName.trim(),
       ownerSecondName: draft.ownerSecondName.trim(),
-      email: draft.email.trim(),
+      email: draft.email.trim().toLowerCase(),
       contactNumber: draft.contactNumber.trim(),
       gender: draft.gender,
     };
@@ -217,38 +175,41 @@ export default function OnboardingPage() {
       return;
     }
 
-    const { data: memberships, error: membershipError } = await supabase
-      .from("workspace_members")
-      .select("workspace_id")
-      .limit(1);
-    if (membershipError) {
+    const accessResult = await loadCurrentWorkspaceAccess(supabase, null, { repairOwner: false });
+    if (accessResult.error) {
       setSubmitError("We could not load your workspace access. Please try again.");
       setSaving(false);
       return;
     }
-
-    let workspaceId = memberships?.[0]?.workspace_id as string | undefined;
-    if (!workspaceId) {
-      const { data, error } = await supabase.rpc("create_workspace", {
-        workspace_name: profile.businessName,
-        business_name: profile.businessName,
-        owner_first_name: profile.ownerFirstName,
-        owner_second_name: profile.ownerSecondName,
-        owner_email: profile.email,
-        owner_contact_number: profile.contactNumber,
-        owner_gender: profile.gender,
-      });
-      if (error || !data) {
-        setSubmitError(workspaceCreationErrorMessage(error));
-        setSaving(false);
-        return;
-      }
-      workspaceId = data as string;
+    if (accessResult.data) {
+      router.replace("/dashboard");
+      return;
     }
 
-    window.localStorage.setItem(BUSINESS_PROFILE_STORAGE_KEY, JSON.stringify(profile));
-    window.localStorage.setItem("solexa-workspace-id", workspaceId);
-    window.setTimeout(() => router.replace("/dashboard"), 300);
+    const { data, error } = await supabase.rpc("create_workspace", {
+      workspace_name: profile.businessName,
+      business_name: profile.businessName,
+      owner_first_name: profile.ownerFirstName,
+      owner_second_name: profile.ownerSecondName,
+      owner_email: profile.email,
+      owner_contact_number: profile.contactNumber,
+      owner_gender: profile.gender,
+    });
+    if (error || !data) {
+      if (error) {
+        console.error("[onboarding] create_workspace failed", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
+      }
+      setSubmitError(workspaceCreationErrorMessage(error));
+      setSaving(false);
+      return;
+    }
+
+    router.replace("/dashboard");
   };
 
   if (checkingMembership) {
@@ -377,7 +338,7 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            {submitError && <p className="auth-field-error" role="alert">{submitError}</p>}
+            {submitError && <p className={styles.submitError} role="alert">{submitError}</p>}
             <div className={styles.actions}>
               {step === 2 ? (
                 <Button

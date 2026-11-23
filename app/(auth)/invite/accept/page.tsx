@@ -81,7 +81,6 @@ export default function AcceptInvitationPage() {
           password_initialized: true,
         },
       });
-      window.localStorage.setItem("solexa-workspace-id", workspaceId);
       router.replace("/dashboard");
     };
 
