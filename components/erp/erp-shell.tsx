@@ -157,7 +157,9 @@ export function ErpShell({ children }: { children: ReactNode }) {
   const navigate = (href: string) => router.push(href);
   const visibleKeys = useMemo(() => workspaceAccess ? visiblePermissionKeys(workspaceAccess) : undefined, [workspaceAccess]);
   const editableKeys = useMemo(() => workspaceAccess ? editablePermissionKeys(workspaceAccess) : undefined, [workspaceAccess]);
-  const userName = workspaceAccess?.memberName || (workspaceAccess?.role === "owner" ? getOwnerDisplayName(profile) : "Workspace member");
+  const userName = workspaceAccess?.role === "owner"
+    ? profile?.ownerFirstName?.trim() || getOwnerDisplayName(profile)
+    : workspaceAccess?.memberName || "Workspace member";
   const userRole = roleLabel(workspaceAccess?.role);
   if (configurationError) return <div className="solexa-refresh-cover" role="alert" aria-label="Secure backend configuration required"><Image src="/solexa-logo.png" alt="Solexa" width={64} height={64} priority className="solexa-refresh-logo" /><strong>solexa</strong><span>secure backend configuration required</span></div>;
   if (!accessChecked || (isSupabaseConfigured() && checkedPath !== pathname)) return <div className="solexa-refresh-cover" role="status" aria-label="Checking workspace access"><Image src="/solexa-logo.png" alt="Solexa" width={64} height={64} priority className="solexa-refresh-logo" /><strong>solexa</strong><span>checking workspace access</span></div>;

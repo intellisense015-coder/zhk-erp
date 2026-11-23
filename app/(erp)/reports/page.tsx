@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { Button } from "../../../components/primitives/button";
 import { Modal, SelectField } from "../../../components/primitives/primitives";
 import { DataTable } from "../../../components/primitives/table";
-import { KpiCard } from "../../../components/erp/kpi-card";
+import { KpiCard } from "../../../components/ui/kpi-card";
 import { formatCurrency, getMonthOptions, getTransactionItems } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
 
@@ -65,14 +65,14 @@ export default function ReportsPage() {
     </div>
 
     <div className="kpi-grid inventory-kpis reports-kpis mb-[18px]">
-      <KpiCard label="Sales revenue" value={formatCurrency(totalSales)} note={`${sales.length} sale records`} icon={<ShoppingCart size={16} />} tone="success" />
-      <KpiCard label="Gross profit" value={formatCurrency(grossProfit)} note="Sales less product costs" icon={<TrendingUp size={16} />} tone={grossProfit >= 0 ? "success" : "error"} />
-      <KpiCard label="Net profit / loss" value={formatCurrency(netProfit)} note="Gross profit less expenses" icon={<TrendingUp size={16} />} tone={netProfit >= 0 ? "success" : "error"} />
-      <KpiCard label="Profit margin" value={`${totalSales ? ((netProfit / totalSales) * 100).toFixed(1) : "0.0"}%`} note="Net margin after expenses" icon={<Percent size={16} />} tone={netProfit >= 0 ? "success" : "error"} />
-      <KpiCard label="Units sold" value={new Intl.NumberFormat("en-PK").format(totalUnitsSold)} note="Items sold in period" icon={<ShoppingCart size={16} />} />
-      <KpiCard label="Total sold cost" value={formatCurrency(totalSoldCost)} note="Cost of products sold" icon={<CircleDollarSign size={16} />} tone="error" />
-      <KpiCard label="Stock purchases" value={formatCurrency(totalPurchases)} note={`${totalUnitsPurchased} units received`} icon={<PackagePlus size={16} />} tone="error" />
-      <KpiCard label="Expenses" value={formatCurrency(totalExpenses)} note="Recorded business costs" icon={<ReceiptText size={16} />} tone="error" />
+      <KpiCard label="Sales revenue" value={formatCurrency(totalSales)} detail={`${sales.length} sale records`} icon={<ShoppingCart size={16} />} />
+      <KpiCard label="Gross profit" value={formatCurrency(grossProfit)} detail="Sales less product costs" icon={<TrendingUp size={16} />} />
+      <KpiCard label="Net profit / loss" value={formatCurrency(netProfit)} detail="Gross profit less expenses" icon={<TrendingUp size={16} />} />
+      <KpiCard label="Profit margin" value={`${totalSales ? ((netProfit / totalSales) * 100).toFixed(1) : "0.0"}%`} detail="Net margin after expenses" icon={<Percent size={16} />} />
+      <KpiCard label="Units sold" value={new Intl.NumberFormat("en-PK").format(totalUnitsSold)} detail="Items sold in period" icon={<ShoppingCart size={16} />} />
+      <KpiCard label="Total sold cost" value={formatCurrency(totalSoldCost)} detail="Cost of products sold" icon={<CircleDollarSign size={16} />} />
+      <KpiCard label="Stock purchases" value={formatCurrency(totalPurchases)} detail={`${totalUnitsPurchased} units received`} icon={<PackagePlus size={16} />} />
+      <KpiCard label="Expenses" value={formatCurrency(totalExpenses)} detail="Recorded business costs" icon={<ReceiptText size={16} />} />
     </div>
 
     <div className="solexa-filter-chips">

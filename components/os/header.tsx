@@ -51,6 +51,10 @@ export interface DashboardHeaderProps {
 
 type OpenDropdown = "quick" | "profile" | null;
 
+function getGreeting() {
+  return "Good morning";
+}
+
 const DEFAULT_SEARCH_MODULES: SearchResultItem[] = [
   { label: "Dashboard", href: "/dashboard", category: "Dasgboard", icon: LayoutDashboard, permissionKey: "dashboard" },
   { label: "POS", href: "/pos", category: "Sales", icon: ShoppingCart, permissionKey: "pos" },
@@ -63,12 +67,6 @@ const DEFAULT_SEARCH_MODULES: SearchResultItem[] = [
   { label: "Suppliers", href: "/suppliers", category: "Entities", icon: Building2, permissionKey: "suppliers" },
   { label: "Settings", href: "/settings", category: "Operations", icon: Settings2, permissionKey: "settings" },
 ];
-
-// Helper: dynamic time greeting
-function getGreeting() {
-  // Keep the initial render deterministic for Next.js prerendering.
-  return "Good morning";
-}
 
 // ==========================================
 // Main Dashboard Header Component

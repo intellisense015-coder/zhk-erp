@@ -2,7 +2,7 @@
 
 import { Building2, CircleDollarSign, Crown, Filter, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { KpiCard } from "../../../components/erp/kpi-card";
+import { KpiCard } from "../../../components/ui/kpi-card";
 import { Button } from "../../../components/primitives/button";
 import { ConfirmDialog, Field, Modal, SelectField } from "../../../components/primitives/primitives";
 import { Notification, type NotificationVariant } from "../../../components/primitives/notification";
@@ -165,10 +165,10 @@ export default function SuppliersPage() {
       </div>
 
       <div className="kpi-grid inventory-kpis inventory-kpis-four mb-[18px]">
-        <KpiCard label="Total suppliers" value={String(rows.length)} note="Supplier accounts" icon={<Users size={16} />} />
-        <KpiCard label="Active suppliers" value={String(activeSuppliers)} note="Suppliers with purchases" icon={<Building2 size={16} />} tone="success" />
-        <KpiCard label="Top purchase source" value={topPurchaseSource?.company || topPurchaseSource?.name || "No purchases yet"} note={topPurchaseSource ? `${formatCurrency(topPurchaseSource.totalPurchased)} purchased` : "No purchases recorded"} icon={<Crown size={16} />} tone="success" />
-        <KpiCard label="Outstanding balance" value={formatCurrency(totalOutstanding)} note="You need to pay" icon={<CircleDollarSign size={16} />} tone={totalOutstanding > 0 ? "error" : "success"} />
+        <KpiCard label="Total suppliers" value={String(rows.length)} detail="Supplier accounts" icon={<Users size={16} />} />
+        <KpiCard label="Active suppliers" value={String(activeSuppliers)} detail="Suppliers with purchases" icon={<Building2 size={16} />} />
+        <KpiCard label="Top purchase source" value={topPurchaseSource?.company || topPurchaseSource?.name || "No purchases yet"} detail={topPurchaseSource ? `${formatCurrency(topPurchaseSource.totalPurchased)} purchased` : "No purchases recorded"} icon={<Crown size={16} />} />
+        <KpiCard label="Outstanding balance" value={formatCurrency(totalOutstanding)} detail="You need to pay" icon={<CircleDollarSign size={16} />} />
       </div>
 
       {(activity !== activityOptions[0] || balance !== balanceOptions[0]) && (

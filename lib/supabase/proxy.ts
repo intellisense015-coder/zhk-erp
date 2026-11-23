@@ -6,6 +6,7 @@ import { getSupabaseEnv } from './config'
 const publicPaths = new Set([
   '/splash',
   '/login',
+  '/api/auth/login',
   '/forgot-password',
   '/forgot-pin',
   '/mfa-recovery',

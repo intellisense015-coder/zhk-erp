@@ -3,7 +3,7 @@
 import { ArrowDownLeft, ClipboardList, Eye, Filter, PackagePlus, Pencil, Receipt, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { KpiCard } from "../../../components/erp/kpi-card";
+import { KpiCard } from "../../../components/ui/kpi-card";
 import { Button } from "../../../components/primitives/button";
 import { Modal, SelectField } from "../../../components/primitives/primitives";
 import { PurchaseFormModal } from "../../../components/erp/purchase-form-modal";
@@ -104,10 +104,10 @@ export default function PurchasesPage() {
       </div>
 
       <section className="erp-grid-4 mb-[18px]">
-        <KpiCard label="Purchase records" value={String(purchases.length)} note="Recorded supplier purchases" icon={<ClipboardList size={18} />} />
-        <KpiCard label="Purchased value" value={formatCompactCurrency(totalPurchased)} note="Total stock purchase value" icon={<Receipt size={18} />} tone="error" />
-        <KpiCard label="Units received" value={totalUnits.toLocaleString("en-PK")} note="Units added to inventory" icon={<PackagePlus size={18} />} tone="success" />
-        <KpiCard label="Outstanding" value={formatCompactCurrency(outstanding)} note={`${formatCurrency(totalPaid)} paid to suppliers`} icon={<ArrowDownLeft size={18} />} tone="error" />
+        <KpiCard label="Purchase records" value={String(purchases.length)} detail="Recorded supplier purchases" icon={<ClipboardList size={18} />} />
+        <KpiCard label="Purchased value" value={formatCompactCurrency(totalPurchased)} detail="Total stock purchase value" icon={<Receipt size={18} />} />
+        <KpiCard label="Units received" value={totalUnits.toLocaleString("en-PK")} detail="Units added to inventory" icon={<PackagePlus size={18} />} />
+        <KpiCard label="Outstanding" value={formatCompactCurrency(outstanding)} detail={`${formatCurrency(totalPaid)} paid to suppliers`} icon={<ArrowDownLeft size={18} />} />
       </section>
 
       <label className="inventory-search-bar">

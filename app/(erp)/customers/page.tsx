@@ -2,7 +2,7 @@
 
 import { Crown, Eye, Filter, Pencil, Plus, Search, Trash2, UserCheck, UserPlus, Users, X } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { KpiCard } from "../../../components/erp/kpi-card";
+import { KpiCard } from "../../../components/ui/kpi-card";
 import { Button } from "../../../components/primitives/button";
 import { ConfirmDialog, Field, Modal, SelectField } from "../../../components/primitives/primitives";
 import { Notification, type NotificationVariant } from "../../../components/primitives/notification";
@@ -36,8 +36,6 @@ export default function CustomersPage() {
   const [notification, setNotification] = useState<{ message: string; variant: NotificationVariant } | null>(null);
 
   const [currentMonth] = useState(() => getMonthKey(new Date()));
-
-  const previousMonth = currentMonth ? getPreviousMonth(currentMonth) : "";
 
   const rows = useMemo<CustomerRow[]>(() => customers.map((customer) => {
     const sales = customerSales(customer, transactions);
@@ -85,11 +83,6 @@ export default function CustomersPage() {
     return [...totals.values()].sort((a, b) => b.amount - a.amount)[0] ?? null;
   }, [customers, currentMonth, transactions]);
   const newCustomersThisMonth = rows.filter((row) => row.createdAt.slice(0, 7) === currentMonth).length;
-  const newCustomersPreviousMonth = rows.filter((row) => row.createdAt.slice(0, 7) === previousMonth).length;
-  const newCustomersTrend = newCustomersPreviousMonth === 0
-    ? (newCustomersThisMonth > 0 ? 100 : 0)
-    : Math.round(((newCustomersThisMonth - newCustomersPreviousMonth) / newCustomersPreviousMonth) * 100);
-  const newCustomersTone = newCustomersThisMonth > newCustomersPreviousMonth ? "success" : newCustomersThisMonth < newCustomersPreviousMonth ? "error" : "default";
 
   const openCreate = () => {
     setEditing(null);
@@ -159,10 +152,10 @@ export default function CustomersPage() {
       </div>
 
       <div className="kpi-grid inventory-kpis inventory-kpis-four mb-[18px]">
-        <KpiCard label="Total customers" value={String(rows.length)} note="Customer accounts" icon={<Users size={16} />} />
-        <KpiCard label="Active customers" value={String(activeCustomers)} note="Customers with sales" icon={<UserCheck size={16} />} tone="success" />
-        <KpiCard label="Biggest customer this month" value={biggestCustomer?.name ?? "No sales yet"} note={biggestCustomer ? `${formatCurrency(biggestCustomer.amount)} spent` : "No customer sales this month"} icon={<Crown size={16} />} tone="success" />
-        <KpiCard label="New this month" value={String(newCustomersThisMonth)} note="Compared with previous month" icon={<UserPlus size={16} />} tone={newCustomersTone} trend={newCustomersTrend} />
+        <KpiCard label="Total customers" value={String(rows.length)} detail="Customer accounts" icon={<Users size={16} />} />
+        <KpiCard label="Active customers" value={String(activeCustomers)} detail="Customers with sales" icon={<UserCheck size={16} />} />
+        <KpiCard label="Biggest customer this month" value={biggestCustomer?.name ?? "No sales yet"} detail={biggestCustomer ? `${formatCurrency(biggestCustomer.amount)} spent` : "No customer sales this month"} icon={<Crown size={16} />} />
+        <KpiCard label="New this month" value={String(newCustomersThisMonth)} detail="Compared with previous month" icon={<UserPlus size={16} />} />
       </div>
 
       {(activity !== activityOptions[0] || purchaseHistory !== purchaseOptions[0] || registrationMonth !== "All months") && (
@@ -261,11 +254,6 @@ function Info({ label, value, tone = "default" }: { label: string; value: string
 
 function getMonthKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function getPreviousMonth(month: string) {
-  const [year, monthNumber] = month.split("-").map(Number);
-  return getMonthKey(new Date(year, monthNumber - 2, 1));
 }
 
 function monthOptionLabel(month: string) {

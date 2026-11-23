@@ -27,6 +27,13 @@ type OnboardingDraft = Pick<
 >;
 type FieldErrors = Partial<Record<keyof OnboardingDraft, string>>;
 
+function workspaceCreationErrorMessage(error: { message?: string } | null) {
+  const message = error?.message?.toLowerCase() ?? "";
+  if (message.includes("email")) return "A workspace already exists with this email.";
+  if (message.includes("phone") || message.includes("contact")) return "A workspace already exists with this phone number.";
+  return "We could not create your secure workspace. Please try again.";
+}
+
 const emptyDraft: OnboardingDraft = {
   businessName: "",
   ownerFirstName: "",
@@ -232,7 +239,7 @@ export default function OnboardingPage() {
         owner_gender: profile.gender,
       });
       if (error || !data) {
-        setSubmitError("We could not create your secure workspace. Please try again.");
+        setSubmitError(workspaceCreationErrorMessage(error));
         setSaving(false);
         return;
       }
