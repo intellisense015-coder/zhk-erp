@@ -1121,11 +1121,13 @@ export function OsHeader({
           border-radius: 24px;
           overflow: hidden;
           box-sizing: border-box;
-          background: rgba(0, 0, 0, 0.2);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+          background: linear-gradient(135deg,
+            color-mix(in srgb, var(--surface-solid) 84%, transparent),
+            color-mix(in srgb, var(--primary-soft) 62%, transparent));
+          backdrop-filter: blur(24px) saturate(145%);
+          -webkit-backdrop-filter: blur(24px) saturate(145%);
+          border: 0;
+          box-shadow: 0 25px 50px -12px color-mix(in srgb, var(--primary-deep) 22%, transparent);
         }
 
         .glass-specular-spline {
@@ -1163,9 +1165,8 @@ export function OsHeader({
           box-sizing: border-box;
           border-radius: 12px;
           margin-bottom: 8px;
-          background: linear-gradient(135deg, color-mix(in srgb, var(--surface-soft) 55%, transparent), color-mix(in srgb, var(--surface-soft) 30%, transparent));
-          border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
-          border-top-color: color-mix(in srgb, #fff 25%, transparent);
+          background: linear-gradient(135deg, color-mix(in srgb, var(--primary-soft) 72%, transparent), color-mix(in srgb, var(--surface-soft) 52%, transparent));
+          border: 0;
           box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 15%, transparent), 0 4px 12px -2px rgba(0, 0, 0, 0.08);
         }
 
@@ -1220,13 +1221,12 @@ export function OsHeader({
           text-align: left;
           border-radius: 10px;
           color: var(--ink);
-          border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
-          border-top-color: color-mix(in srgb, #fff 15%, transparent);
-          background: color-mix(in srgb, var(--surface-solid) 15%, transparent);
+          border: 0;
+          background: color-mix(in srgb, var(--surface-soft) 58%, transparent);
           backdrop-filter: blur(10px) saturate(120%);
           -webkit-backdrop-filter: blur(10px) saturate(120%);
           box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent);
-          transition: background 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+          transition: background 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .menu-icon-layer {
@@ -1236,8 +1236,6 @@ export function OsHeader({
 
         .profile-menu-item:hover {
           background: color-mix(in srgb, var(--primary) 18%, transparent);
-          border-color: color-mix(in srgb, var(--primary) 35%, transparent);
-          border-top-color: color-mix(in srgb, #fff 30%, transparent);
           transform: translateY(-0.5px);
           box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent), 0 6px 16px -4px color-mix(in srgb, var(--primary) 20%, transparent);
         }
@@ -1255,13 +1253,11 @@ export function OsHeader({
 
         .profile-menu-item.danger-item {
           color: var(--danger);
-          border-color: color-mix(in srgb, var(--danger) 10%, transparent);
+          border: 0;
         }
 
         .profile-menu-item.danger-item:hover {
           background: color-mix(in srgb, var(--danger) 15%, transparent);
-          border-color: color-mix(in srgb, var(--danger) 40%, transparent);
-          border-top-color: color-mix(in srgb, #fff 25%, transparent);
           box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 15%, transparent), 0 6px 16px -4px color-mix(in srgb, var(--danger) 20%, transparent);
         }
 

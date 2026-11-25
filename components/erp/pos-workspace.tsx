@@ -76,8 +76,9 @@ export function PosWorkspace() {
     const matchesCategory = activeCategory === "All categories" || product.category === activeCategory;
     const query = search.trim().toLowerCase();
     const matchesSearch = !query || `${product.name} ${product.sku} ${product.color} ${product.brand ?? ""}`.toLowerCase().includes(query);
-    return matchesCategory && matchesSearch;
-  }), [products, activeCategory, search]);
+    const matchesAvailability = mode !== "sale" || product.inStockQuantity > 0;
+    return matchesCategory && matchesSearch && matchesAvailability;
+  }), [products, activeCategory, mode, search]);
 
   const tradeInTotal = (Number(givenQuantity) || 0) * (Number(tradeInUnitValue) || 0);
   const replacementTotal = (Number(receivedQuantity) || 0) * (Number(receivedUnitSellingPrice) || 0);

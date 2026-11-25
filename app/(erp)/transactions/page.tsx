@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Boxes, CircleDollarSign, ClipboardList, Filter, Search, TrendingUp, X } from "lucide-react";
+import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Boxes, CircleDollarSign, ClipboardList, Search, TrendingUp, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "../../../components/primitives/button";
 import { KpiCard } from "../../../components/ui/kpi-card";
@@ -45,7 +45,7 @@ export default function TransactionsPage() {
   const clearFilter = () => { setMonth("all"); setDraftMonth("all"); setServerPage(1); };
 
   return <div className="erp-content inventory-page-enter">
-    <div className="erp-page-heading"><div><h1 className="erp-page-title">Transactions</h1></div><Button variant="secondary" className="font-sans text-sm font-medium text-[var(--text)] min-h-10 px-4 rounded-[15px] gap-2" onClick={() => { setDraftMonth(month); setFilterOpen(true); }}><Filter size={14} />Filters</Button></div>
+    <div className="erp-page-heading"><div><h1 className="erp-page-title">Transactions</h1></div><Button variant="secondary" className="font-sans text-sm font-medium text-[var(--text)] min-h-10 px-4 rounded-[15px] gap-2" onClick={() => { setDraftMonth(month); setFilterOpen(true); }}>Filters</Button></div>
     <div className="kpi-grid inventory-kpis inventory-kpis-four mb-[18px]"><Kpi label="Total transactions" value={String(records.length)} note="Recorded activity" icon={<ClipboardList size={16} />} /><Kpi label="Customer sales" value={formatCompactCurrency(totalSales)} note={`${sales.length} sale records`} icon={<CircleDollarSign size={16} />} /><Kpi label="Supplier purchases" value={formatCompactCurrency(totalPurchases)} note={`${purchases.length} purchase records`} icon={<Boxes size={16} />} /><Kpi label="Net movement" value={formatCompactCurrency(netMovement)} note="Sales minus purchases" icon={<TrendingUp size={16} />} /></div>
     <div className="solexa-filter-chips">{month !== "all" && <><span className="solexa-filter-chip">{monthOptions.find((option) => option.value === month)?.label ?? month}<button type="button" onClick={clearFilter} aria-label="Remove month filter"><X size={13} /></button></span><button type="button" className="solexa-filter-clear" onClick={clearFilter}>Clear all</button></>}</div>
     <label className="inventory-search-bar"><Search size={15} /><input value={search} onChange={(event) => { setSearch(event.target.value); setServerPage(1); }} placeholder="Search item or party..." aria-label="Search item or party" />{search && <button type="button" onClick={() => { setSearch(""); setServerPage(1); }} aria-label="Clear search"><X size={13} /></button>}</label>

@@ -20,8 +20,8 @@ export function PurchaseFormModal({ open, onClose, onSubmit, onAddProduct, serve
   const productId = useWatch({ control, name: "productId" }) || "";
   const quantity = Number(useWatch({ control, name: "quantity" }) || 0);
   const unitCost = Number(useWatch({ control, name: "unitCost" }) || 0);
-  const fundingSource = useWatch({ control, name: "fundingSource" }) || "supplier-credit";
   const capitalId = useWatch({ control, name: "capitalId" }) || "";
+  const fundingSource = useWatch({ control, name: "fundingSource" }) || "supplier-credit";
   const total = quantity * unitCost;
   useEffect(() => { if (open) reset(defaultValues); }, [open, reset, defaultValues]);
   const selectedSupplier = suppliers.find((supplier) => supplier.id === supplierId);
@@ -33,7 +33,7 @@ export function PurchaseFormModal({ open, onClose, onSubmit, onAddProduct, serve
   };
   return <Modal open={open} loading={!hydrated} title="Add stock" description="Record incoming supplier stock and its payment status." onClose={onClose}>
     <Notification message={serverError} variant="error" onDismiss={onDismissServerError} />
-    {!products.length ? <div className="p-5"><p className="text-sm font-semibold text-[var(--text-primary)]">Add a product first</p><p className="mt-1 text-xs text-[var(--text-muted)]">Stock entries need an inventory product to attach to.</p></div> :
+    {!products.length ? <div className="grid gap-3 p-5"><div><p className="text-sm font-semibold text-[var(--text-primary)]">Add a product first</p><p className="mt-1 text-xs text-[var(--text-muted)]">Stock entries need an inventory product to attach to.</p></div><Button type="button" variant="brand" onClick={onAddProduct}>Add product</Button></div> :
     <form onSubmit={handleSubmit(onSubmit)} className="grid gap-x-5 gap-y-1 p-5 sm:grid-cols-2">
       <SelectField label="Item" searchable searchPlaceholder="Search brand, category, or model..." value={productId} hint={errors.productId?.message} onChange={(event) => { if (event.target.value === "__new_product__") { onAddProduct?.(); return; } const product = products.find((item) => item.id === event.target.value); setValue("productId", event.target.value, { shouldValidate: true }); if (product) setValue("unitCost", product.costPrice, { shouldValidate: true }); }}><option value="__new_product__">+ New Product</option>{products.map((product) => <option key={product.id} value={product.id}>{productOptionLabel(product)}</option>)}</SelectField>
       <SelectField label="Supplier" searchable searchPlaceholder="Search suppliers..." value={supplierId || "__new_supplier__"} hint={errors.vendorName?.message || errors.supplierContactNumber?.message} onChange={(event) => { const value = event.target.value; if (value === "__new_supplier__") { setValue("supplierId", "", { shouldDirty: true }); setValue("vendorName", "", { shouldValidate: true }); setValue("supplierContactNumber", "", { shouldValidate: true }); setValue("supplierCompany", ""); } else { const supplier = suppliers.find((item) => item.id === value); setValue("supplierId", value, { shouldDirty: true }); setValue("vendorName", supplier?.name ?? "", { shouldValidate: true }); setValue("supplierContactNumber", supplier?.contactNumber ?? "", { shouldValidate: true }); setValue("supplierCompany", supplier?.company ?? ""); } }}>
@@ -48,15 +48,20 @@ export function PurchaseFormModal({ open, onClose, onSubmit, onAddProduct, serve
       <Field label="Quantity received" type="number" min={1} {...register("quantity", { valueAsNumber: true })} hint={errors.quantity?.message} />
       <Field label="Unit cost" type="number" min={1} {...register("unitCost", { valueAsNumber: true })} hint={errors.unitCost?.message} />
       <Field label="Paid now" type="number" min={0} {...register("paidAmount", { valueAsNumber: true })} hint={errors.paidAmount?.message} />
-      <SelectField label="Funding source" value={fundingSource} onChange={(event) => { const next = event.target.value as PurchaseFormValues["fundingSource"]; setValue("fundingSource", next, { shouldDirty: true }); if (next !== "capital") setValue("capitalId", "", { shouldDirty: true }); }}>
-        <option value="supplier-credit">Supplier credit / unpaid</option>
+      <SelectField label="Funding source" value={fundingSource} onChange={(event) => { const value = event.target.value as PurchaseFormValues["fundingSource"]; setValue("fundingSource", value, { shouldDirty: true, shouldValidate: true }); if (value !== "capital") setValue("capitalId", "", { shouldDirty: true, shouldValidate: true }); }}>
+        <option value="supplier-credit">Supplier credit</option>
         <option value="other">Other funds</option>
         <option value="capital">Business capital</option>
       </SelectField>
-      {fundingSource === "capital" && <SelectField label="Capital account" value={capitalId} hint={errors.capitalId?.message} onChange={(event) => setValue("capitalId", event.target.value, { shouldDirty: true, shouldValidate: true })}>
+      {fundingSource === "capital" ? <SelectField label="Capital account" value={capitalId} hint={errors.capitalId?.message} onChange={(event) => setValue("capitalId", event.target.value, { shouldDirty: true, shouldValidate: true })}>
         <option value="">Select capital account</option>
         {capitalAccounts.map((account) => { const balance = getCapitalSummary(account.id, capitalEntries, transactions, supplierPayments).available; return <option key={account.id} value={account.id}>{account.name} · {formatCurrency(balance)} available</option>; })}
-      </SelectField>}
+      </SelectField> : null}
+      <div className="purchase-funding-explanation sm:col-span-2" role="note">
+        <strong>{fundingSource === "capital" ? "Capital reservation" : "Supplier settlement"}</strong>
+        <p>{fundingSource === "capital" ? "This purchase reserves the full purchase total from the selected capital account." : "This purchase will not reduce a capital account."}</p>
+        <p>“Paid now” records the supplier settlement. Only purchases funded by business capital reserve the full purchase total from a capital account.</p>
+      </div>
       <div className="purchase-calculation-card sm:col-span-2"><span>Qty × Unit Cost</span><strong>{quantity} × {formatCurrency(unitCost)}</strong><b>= {formatCurrency(total)}</b></div>
       <div className="primitive-dialog-actions px-0 pb-0 sm:col-span-2"><Button type="button" variant="secondary" className="cancel-button" onClick={onClose}>Cancel</Button><Button type="submit" variant="brand" disabled={isSubmitting}>Add stock</Button></div>
     </form>}

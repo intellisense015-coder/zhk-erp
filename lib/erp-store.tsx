@@ -3,7 +3,7 @@
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getCapitalSummary, productBrands, type CapitalAccount, type CapitalEntry, type Customer, type Expense, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from "./erp-data";
+import { getCapitalSummary, productBrands, roundMoney, type CapitalAccount, type CapitalEntry, type Customer, type Expense, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from "./erp-data";
 import { createInvoiceNumber } from "./invoice-utils";
 import type { ExchangeFormValues, ProductFormValues, PurchaseFormValues, SaleFormValues } from "./validations";
 import type { RemoteResource } from "./supabase/erp-read";
@@ -35,11 +35,12 @@ function persistLocalStore(next: StoreData) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 }
 type StoreData = { products: Product[]; transactions: Transaction[]; customers: Customer[]; suppliers: Supplier[]; supplierPayments: SupplierPayment[]; expenses: Expense[]; expenseCategories: string[]; capitalAccounts: CapitalAccount[]; capitalEntries: CapitalEntry[] };
+type ProductSubmitValues = ProductFormValues & { capitalId?: string };
 type ExpenseFormValues = Omit<Expense, "id" | "date" | "month" | "createdAt">;
 type StoreResult = { ok: true } | { ok: false; message: string };
 type StoreContextValue = StoreData & {
   hydrated: boolean;
-  addProduct: (values: ProductFormValues) => Promise<StoreResult>;
+  addProduct: (values: ProductSubmitValues) => Promise<StoreResult>;
   updateProduct: (id: string, values: ProductFormValues) => Promise<StoreResult>;
   deleteProduct: (id: string) => Promise<StoreResult>;
   addCustomer: (values: { name: string; contactNumber: string; gender?: string; cnicNumber?: string }) => Promise<{ ok: true; customer?: Customer } | { ok: false; message: string }>;
@@ -50,6 +51,7 @@ type StoreContextValue = StoreData & {
   deleteSupplier: (id: string) => Promise<StoreResult>;
   addPurchase: (values: PurchaseFormValues) => Promise<{ ok: true } | { ok: false; message: string }>;
   updatePurchase: (id: string, values: { quantity: number; unitCost: number }) => Promise<StoreResult>;
+  cancelPurchase: (id: string) => Promise<StoreResult>;
   addSale: (values: SaleFormValues) => Promise<StoreResult>;
   addExchange: (values: ExchangeFormValues) => Promise<StoreResult>;
   addSupplierPayment: (values: { supplierId: string; amount: number; note?: string; capitalId?: string }) => Promise<StoreResult>;
@@ -58,7 +60,9 @@ type StoreContextValue = StoreData & {
   updateExpense: (id: string, values: ExpenseFormValues) => Promise<StoreResult>;
   deleteExpense: (id: string) => Promise<StoreResult>;
   addCapitalAccount: (values: { name: string; ownerName?: string; amount: number; note?: string }) => Promise<StoreResult>;
+  updateCapitalAccount: (id: string, values: { name: string; ownerName?: string; amount: number }) => Promise<StoreResult>;
   addCapitalEntry: (values: { capitalId: string; type: "contribution" | "withdrawal"; amount: number; note?: string }) => Promise<StoreResult>;
+  updateCapitalEntry: (id: string, values: { capitalId: string; type: "contribution" | "withdrawal"; amount: number; note?: string }) => Promise<StoreResult>;
   addTransfer: (values: { transferKind: "supplier-to-customer" | "customer-to-customer"; fromEntity: string; toEntity: string; productId: string; quantity: number; amount: number }) => Promise<StoreResult>;
   updateSale: (id: string, values: { customerName: string; items: SaleLineItem[] }) => Promise<StoreResult>;
 };
@@ -66,8 +70,23 @@ type StoreContextValue = StoreData & {
 const emptyStore: StoreData = { products: [], transactions: [], customers: [], suppliers: [], supplierPayments: [], expenses: [], expenseCategories: [], capitalAccounts: [], capitalEntries: [] };
 const StoreContext = createContext<StoreContextValue | null>(null);
 
-function readableRpcError(message: string, fallback: string) {
+function readableRpcError(message: string, fallback: string, operation?: string) {
   const cleaned = message.replace(/^.*?ERROR:\s*/i, "").trim();
+  if (/create_product_with_capital/i.test(cleaned) || (operation === "create_product_with_capital" && /schema cache|function .* does not exist/i.test(cleaned))) {
+    return "Product accounting is not deployed to Supabase yet. Apply the latest database migrations, then try again.";
+  }
+  if (operation === "update_capital_account" && /schema cache|function .* does not exist/i.test(cleaned)) {
+    return "Capital account editing is not deployed to Supabase yet. Apply the latest database migrations, then try again.";
+  }
+  if (operation === "update_purchase" && /schema cache|function .* does not exist/i.test(cleaned)) {
+    return "Purchase editing is not deployed to Supabase yet. Apply the latest database migrations, then try again.";
+  }
+  if (operation === "cancel_purchase" && /schema cache|function .* does not exist/i.test(cleaned)) {
+    return "Purchase cancellation is not deployed to Supabase yet. Apply the latest database migrations, then try again.";
+  }
+  if (/Products with transaction history cannot be deleted/i.test(cleaned)) {
+    return "This product has transaction history and cannot be deleted. To reverse a supplier purchase, use Purchases → Cancel purchase; sales history cannot be deleted.";
+  }
   if (/column reference|relation .* does not exist|function .* does not exist|permission denied|syntax error/i.test(cleaned)) {
     return fallback;
   }
@@ -227,6 +246,12 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
     ...data,
     hydrated,
     addProduct: async (values) => {
+      const initialStockTotal = roundMoney(values.inStockQuantity * values.costPrice);
+      if (values.inStockQuantity > 0 && !values.capitalId) return { ok: false, message: "Select a capital account for the opening stock." };
+      if (values.inStockQuantity > 0 && values.capitalId) {
+        const capitalAvailable = getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available;
+        if (initialStockTotal > capitalAvailable) return { ok: false, message: `The product cannot be created because initial stock exceeds available capital. Available capital: ${capitalAvailable.toFixed(2)}; opening stock total: ${initialStockTotal.toFixed(2)}.` };
+      }
       const brand = values.brand.trim();
       const model = values.model.trim();
       const color = values.color.trim();
@@ -247,7 +272,7 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
       if (isSupabaseConfigured()) {
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
-        const { error } = await supabase.rpc("create_product", {
+        const { error } = await supabase.rpc("create_product_with_capital", {
           target_workspace_id: workspaceId,
           product_payload: {
             name,
@@ -266,6 +291,7 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
             vendor_name: supplier.name,
             vendor_contact_number: supplier.contactNumber,
             vendor_company: supplier.company,
+            capital_id: values.capitalId ?? null,
           },
         });
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not save this product.") };
@@ -275,8 +301,8 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
       const product = { ...values, name, sku, brand, model, color, imageSource, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company, id: productId, sold: 0, received: values.inStockQuantity };
       const createdAt = new Date().toISOString();
       const { date, month } = getDateParts();
-      const total = values.inStockQuantity * values.costPrice;
-      const purchaseTransaction: Transaction | null = values.inStockQuantity > 0 ? { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), source: "supplier", name: product.name, productId, unitCost: values.costPrice, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: values.inStockQuantity, amount: total, paidAmount: 0, outstandingAmount: total, time: "Just now", createdAt, date, month } : null;
+      const total = initialStockTotal;
+      const purchaseTransaction: Transaction | null = values.inStockQuantity > 0 ? { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), source: "supplier", name: product.name, productId, unitCost: values.costPrice, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: values.inStockQuantity, amount: total, paidAmount: 0, outstandingAmount: total, fundingSource: "capital", capitalId: values.capitalId, time: "Just now", createdAt, date, month } : null;
       commit({ ...data, products: [...data.products, product], transactions: purchaseTransaction ? [purchaseTransaction, ...data.transactions] : data.transactions, suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
       return { ok: true };
     },
@@ -300,6 +326,7 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
       const supplier = existingSupplier ?? { id: makeId("supplier"), name: vendorName, contactNumber: vendorContact, company: vendorCompany, createdAt: new Date().toISOString() };
       const existingProduct = data.products.find((product) => product.id === id);
       if (!existingProduct) return { ok: false, message: "This product no longer exists." };
+      if (values.inStockQuantity > existingProduct.inStockQuantity) return { ok: false, message: "Stock increases must be recorded with Add stock so the purchase can be charged to capital." };
       if (isSupabaseConfigured()) {
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
@@ -328,12 +355,7 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
         if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this product.") };
         return refreshRemoteStore(["products", "suppliers", "transactions"]);
       }
-      const stockIncrease = Math.max(values.inStockQuantity - (existingProduct?.inStockQuantity ?? 0), 0);
-      const createdAt = new Date().toISOString();
-      const { date, month } = getDateParts();
-      const total = stockIncrease * values.costPrice;
-      const purchaseTransaction: Transaction | null = stockIncrease > 0 ? { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), source: "supplier", name, productId: id, unitCost: values.costPrice, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: stockIncrease, amount: total, paidAmount: 0, outstandingAmount: total, time: "Just now", createdAt, date, month } : null;
-      commit({ ...data, products: data.products.map((product) => product.id === id ? { ...product, ...values, name, sku, brand, model, color, imageSource, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company } : product), transactions: purchaseTransaction ? [purchaseTransaction, ...data.transactions] : data.transactions, suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
+      commit({ ...data, products: data.products.map((product) => product.id === id ? { ...product, ...values, name, sku, brand, model, color, imageSource, vendorName: supplier.name, vendorContactNumber: supplier.contactNumber, vendorCompany: supplier.company } : product), suppliers: existingSupplier ? data.suppliers : [supplier, ...data.suppliers] });
       return { ok: true };
     },
     deleteProduct: async (id) => {
@@ -470,11 +492,14 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
       if (data.customers.some((customer) => customer.contactNumber === supplierContact)) return { ok: false, message: "This contact number belongs to a customer and cannot be reused for a supplier." };
       const existingSupplier = data.suppliers.find((supplier) => supplier.id === values.supplierId);
       const supplier = existingSupplier ? { ...existingSupplier, name: supplierName, contactNumber: supplierContact, company: supplierCompany } : { id: makeId("supplier"), name: supplierName, contactNumber: supplierContact, company: supplierCompany, createdAt: new Date().toISOString() };
-      const total = values.quantity * values.unitCost;
+      const total = roundMoney(values.quantity * values.unitCost);
       if (values.paidAmount > total) return { ok: false, message: "Paid amount cannot exceed the purchase total." };
       const capitalId = values.fundingSource === "capital" ? values.capitalId : undefined;
-      if (values.fundingSource === "capital" && !capitalId) return { ok: false, message: "Choose a capital account for this purchase." };
-      if (capitalId && values.paidAmount > getCapitalSummary(capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available) return { ok: false, message: "The purchase payment exceeds the available capital." };
+      if (values.fundingSource === "capital") {
+        if (!capitalId) return { ok: false, message: "Select a capital account for capital-funded stock." };
+        const capitalAvailable = getCapitalSummary(capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available;
+        if (total > capitalAvailable) return { ok: false, message: `The purchase cannot be completed due to insufficient capital. Available capital: ${capitalAvailable.toFixed(2)}; purchase total: ${total.toFixed(2)}.` };
+      }
       if (isSupabaseConfigured()) {
         const supabase = createSupabaseBrowserClient();
         if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
@@ -489,7 +514,7 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
             quantity: values.quantity,
             unit_cost: values.unitCost,
             paid_amount: values.paidAmount,
-            funding_source: values.fundingSource ?? "other",
+            funding_source: values.fundingSource,
             capital_id: capitalId ?? null,
           },
         });
@@ -497,9 +522,9 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
         return refreshRemoteStore(["products", "transactions", "suppliers", "supplierPayments", "capitalEntries"]);
       }
       const { date, month } = getDateParts();
-      const transaction: Transaction = { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), name: product.name, productId: product.id, unitCost: values.unitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: values.quantity, amount: total, paidAmount: values.paidAmount, outstandingAmount: total - values.paidAmount, fundingSource: values.fundingSource ?? "other", capitalId, time: "Just now", createdAt: new Date().toISOString(), date, month };
+      const transaction: Transaction = { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), name: product.name, productId: product.id, unitCost: values.unitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplierCompany, quantity: values.quantity, amount: total, paidAmount: values.paidAmount, outstandingAmount: roundMoney(total - values.paidAmount), fundingSource: values.fundingSource, capitalId, source: "supplier", time: "Just now", createdAt: new Date().toISOString(), date, month };
       const nextSuppliers = existingSupplier ? data.suppliers.map((item) => item.id === supplier.id ? supplier : item) : [supplier, ...data.suppliers];
-      const payment = values.paidAmount > 0 ? { id: makeId("payment"), supplierId: supplier.id, amount: values.paidAmount, note: "Paid with purchase", capitalId, date, time: "Just now", createdAt: new Date().toISOString() } : null;
+      const payment = values.paidAmount > 0 ? { id: makeId("payment"), supplierId: supplier.id, amount: values.paidAmount, note: "Paid with purchase", capitalId, purchaseTransactionId: transaction.id, date, time: "Just now", createdAt: new Date().toISOString() } : null;
       commit({ products: data.products.map((item) => item.id === product.id ? { ...item, inStockQuantity: item.inStockQuantity + values.quantity, received: item.received + values.quantity, costPrice: values.unitCost } : item), transactions: [transaction, ...data.transactions], customers: data.customers, suppliers: nextSuppliers, supplierPayments: payment ? [payment, ...data.supplierPayments] : data.supplierPayments, expenses: data.expenses, expenseCategories: data.expenseCategories, capitalAccounts: data.capitalAccounts, capitalEntries: data.capitalEntries });
       return { ok: true };
     },
@@ -510,8 +535,13 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
       const product = data.products.find((item) => item.id === purchase.productId || item.name === purchase.name);
       if (!product) return { ok: false, message: "The product attached to this purchase no longer exists." };
       const previousPaid = purchase.paidAmount ?? 0;
-      const total = values.quantity * values.unitCost;
+      const total = roundMoney(values.quantity * values.unitCost);
       if (previousPaid > total) return { ok: false, message: "Purchase total cannot be lower than the amount already paid." };
+      if (purchase.source === "supplier" && purchase.capitalId) {
+        const currentCapital = getCapitalSummary(purchase.capitalId, data.capitalEntries, data.transactions, data.supplierPayments);
+        const availableWithoutPurchase = roundMoney(currentCapital.available + purchase.amount);
+        if (total > availableWithoutPurchase) return { ok: false, message: `The purchase cannot be updated due to insufficient capital. Available capital for this edit: ${availableWithoutPurchase.toFixed(2)}; new purchase total: ${total.toFixed(2)}.` };
+      }
       const quantityDelta = values.quantity - purchase.quantity;
       if (product.inStockQuantity + quantityDelta < 0) return { ok: false, message: "The edited purchase would make stock negative." };
       if (isSupabaseConfigured()) {
@@ -522,11 +552,37 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
           target_purchase_id: id,
           purchase_payload: { quantity: values.quantity, unit_cost: values.unitCost },
         });
-        if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this purchase.") };
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this purchase.", "update_purchase") };
         return refreshRemoteStore(["products", "transactions", "suppliers", "supplierPayments", "capitalEntries"]);
       }
-      const updated: Transaction = { ...purchase, quantity: values.quantity, unitCost: values.unitCost, amount: total, outstandingAmount: total - previousPaid };
+      const updated: Transaction = { ...purchase, quantity: values.quantity, unitCost: values.unitCost, amount: total, outstandingAmount: roundMoney(total - previousPaid) };
       commit({ ...data, products: data.products.map((item) => item.id === product.id ? { ...item, inStockQuantity: item.inStockQuantity + quantityDelta, received: item.received + quantityDelta, costPrice: values.unitCost } : item), transactions: data.transactions.map((transaction) => transaction.id === id ? updated : transaction) });
+      return { ok: true };
+    },
+    cancelPurchase: async (id) => {
+      const purchase = data.transactions.find((transaction) => transaction.id === id && transaction.type === "purchase");
+      if (!purchase) return { ok: false, message: "Purchase record not found." };
+      if (purchase.source !== "supplier") return { ok: false, message: "Only supplier purchases can be cancelled; trade-ins must be reversed through the exchange workflow." };
+      const product = data.products.find((item) => item.id === purchase.productId);
+      if (!product) return { ok: false, message: "The product attached to this purchase no longer exists." };
+      if (product.inStockQuantity < purchase.quantity) return { ok: false, message: "This purchase cannot be cancelled because some of its stock has already been sold or transferred." };
+      const supplier = data.suppliers.find((item) => item.id === purchase.supplierId);
+      const nonLinkedPayments = data.supplierPayments.filter((payment) => payment.supplierId === purchase.supplierId && !payment.purchaseTransactionId && payment.note !== "Paid with purchase" && payment.note !== "Paid with exchange arrangement").reduce((sum, payment) => sum + payment.amount, 0);
+      const remainingPurchased = data.transactions.filter((transaction) => transaction.id !== id && transaction.type === "purchase" && transaction.source === "supplier" && (transaction.supplierId === purchase.supplierId || transaction.party === purchase.party)).reduce((sum, transaction) => sum + transaction.amount, 0);
+      if (nonLinkedPayments > remainingPurchased + (supplier?.openingBalance ?? 0)) return { ok: false, message: "This purchase cannot be cancelled because supplier payments would exceed the remaining supplier balance." };
+      if (isSupabaseConfigured()) {
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("cancel_purchase", { target_workspace_id: workspaceId, target_purchase_id: id });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not cancel this purchase.", "cancel_purchase") };
+        return refreshRemoteStore(["products", "transactions", "suppliers", "supplierPayments", "capitalEntries"]);
+      }
+      const replacementCost = data.transactions.find((transaction) => transaction.id !== id && transaction.productId === product.id && transaction.type === "purchase" && transaction.source !== "customer-trade-in")?.unitCost;
+      const nextTransactions = data.transactions.filter((transaction) => transaction.id !== id);
+      const nextProducts = data.products.map((item) => item.id === product.id ? { ...item, inStockQuantity: item.inStockQuantity - purchase.quantity, received: Math.max(0, item.received - purchase.quantity), costPrice: replacementCost ?? item.costPrice } : item);
+      const remainingProductHistory = nextTransactions.some((transaction) => transaction.productId === product.id);
+      const nextProductRows = nextProducts.filter((item) => item.id !== product.id || remainingProductHistory || item.inStockQuantity > 0 || item.received > 0 || item.sold > 0);
+      commit({ ...data, products: nextProductRows, transactions: nextTransactions, supplierPayments: data.supplierPayments.filter((payment) => payment.purchaseTransactionId !== id) });
       return { ok: true };
     },
     addExpense: async (values) => {
@@ -626,6 +682,38 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
       commit({ ...data, capitalAccounts: [account, ...data.capitalAccounts], capitalEntries: [entry, ...data.capitalEntries] });
       return { ok: true };
     },
+    updateCapitalAccount: async (id, values) => {
+      const name = values.name.trim();
+      const account = data.capitalAccounts.find((item) => item.id === id);
+      if (!account) return { ok: false, message: "Capital account not found." };
+      if (!name || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Enter a capital account name and an opening amount greater than zero." };
+      if (data.capitalAccounts.some((item) => item.id !== id && normalizeName(item.name) === normalizeName(name))) return { ok: false, message: "A capital account with this name already exists." };
+      if (isSupabaseConfigured()) {
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("update_capital_account", {
+          target_workspace_id: workspaceId,
+          target_capital_id: id,
+          capital_payload: { name, owner_name: values.ownerName?.trim() ?? "", opening_amount: values.amount },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this capital account.", "update_capital_account") };
+        return refreshRemoteStore(["capitalAccounts", "capitalEntries", "transactions"]);
+      }
+      const openingEntry = data.capitalEntries
+        .filter((entry) => entry.capitalId === id && entry.type === "contribution")
+        .sort((left, right) => `${left.date} ${left.createdAt ?? ""}`.localeCompare(`${right.date} ${right.createdAt ?? ""}`))[0];
+      const currentAvailable = getCapitalSummary(id, data.capitalEntries, data.transactions, data.supplierPayments).available;
+      const projectedAvailable = roundMoney(currentAvailable - (openingEntry?.amount ?? 0) + values.amount);
+      if (projectedAvailable < 0) return { ok: false, message: `The opening amount cannot be reduced this far because it would make available capital negative. Current available capital after this edit: ${projectedAvailable.toFixed(2)}.` };
+      const nextEntries = openingEntry
+        ? data.capitalEntries.map((entry) => entry.id === openingEntry.id ? { ...entry, amount: roundMoney(values.amount) } : entry)
+        : (() => {
+          const { date, month } = getDateParts();
+          return [{ id: makeId("capital-entry"), capitalId: id, type: "contribution" as const, amount: roundMoney(values.amount), date, month, note: "Opening capital", createdAt: new Date().toISOString() }, ...data.capitalEntries];
+        })();
+      commit({ ...data, capitalAccounts: data.capitalAccounts.map((item) => item.id === id ? { ...item, name, ownerName: values.ownerName?.trim() ?? "" } : item), capitalEntries: nextEntries });
+      return { ok: true };
+    },
     addCapitalEntry: async (values) => {
       const account = data.capitalAccounts.find((item) => item.id === values.capitalId);
       if (!account || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Choose a capital account and enter an amount greater than zero." };
@@ -643,6 +731,30 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
       const { date, month } = getDateParts();
       const entry: CapitalEntry = { id: makeId("capital-entry"), ...values, amount: values.amount, note: values.note?.trim(), date, month, createdAt: new Date().toISOString() };
       commit({ ...data, capitalEntries: [entry, ...data.capitalEntries] });
+      return { ok: true };
+    },
+    updateCapitalEntry: async (id, values) => {
+      const existing = data.capitalEntries.find((entry) => entry.id === id);
+      const account = data.capitalAccounts.find((item) => item.id === values.capitalId);
+      if (!existing) return { ok: false, message: "Capital movement not found." };
+      if (!account || !Number.isFinite(values.amount) || values.amount <= 0) return { ok: false, message: "Choose a capital account and enter an amount greater than zero." };
+      const currentAvailable = getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available;
+      const availableWithoutExisting = existing.capitalId === values.capitalId
+        ? roundMoney(currentAvailable + (existing.type === "withdrawal" ? existing.amount : -existing.amount))
+        : currentAvailable;
+      if (values.type === "withdrawal" && values.amount > availableWithoutExisting) return { ok: false, message: "The withdrawal exceeds the available capital for this edit." };
+      if (isSupabaseConfigured()) {
+        const supabase = createSupabaseBrowserClient();
+        if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
+        const { error } = await supabase.rpc("update_capital_entry", {
+          target_workspace_id: workspaceId,
+          target_entry_id: id,
+          capital_payload: { capital_id: values.capitalId, type: values.type, amount: values.amount, note: values.note?.trim() || null },
+        });
+        if (error) return { ok: false, message: readableRpcError(error.message, "We could not update this capital movement.") };
+        return refreshRemoteStore(["capitalEntries", "transactions"]);
+      }
+      commit({ ...data, capitalEntries: data.capitalEntries.map((entry) => entry.id === id ? { ...entry, capitalId: values.capitalId, type: values.type, amount: values.amount, note: values.note?.trim() } : entry) });
       return { ok: true };
     },
     addSale: async (values) => {
@@ -727,27 +839,10 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
       const customer = existingCustomer ? { ...existingCustomer, name: values.customerName.trim(), contactNumber, code: makeUniqueCustomerCode(customerCode, data.customers, existingCustomer.id) } : { id: makeId("customer"), name: values.customerName.trim(), contactNumber, code: makeUniqueCustomerCode(customerCode, data.customers), createdAt: new Date().toISOString() };
       if (!customer.name || !contactNumber) return { ok: false, message: "Customer name and contact number are required." };
 
-      let supplier: Supplier | undefined;
-      let purchaseTransaction: Transaction | undefined;
-      let purchasePayment: SupplierPayment | null = null;
       const exchangeId = makeId("exchange");
       const { date, month } = getDateParts();
       if (!isBuyback && receiveSource === "supplier" && receivedProduct) {
-        const supplierName = values.supplierName.trim();
-        const supplierContact = normalizeContact(values.supplierContactNumber);
-        const supplierCompany = values.supplierCompany?.trim() ?? "";
-        if (!supplierName || !supplierContact) return { ok: false, message: "Supplier name and contact number are required when arranging the replacement phone." };
-        if (ownerContact && ownerContact === supplierContact) return { ok: false, message: "The business owner's number cannot be used as a supplier contact." };
-        if (data.customers.some((customerRecord) => customerRecord.contactNumber === supplierContact)) return { ok: false, message: "This supplier contact number belongs to a customer." };
-        const supplierConflict = data.suppliers.find((supplierRecord) => supplierRecord.id !== values.supplierId && supplierContact && supplierRecord.contactNumber === supplierContact);
-        if (supplierConflict) return { ok: false, message: "This supplier contact number is already assigned to another supplier." };
-        const supplierTotal = receivedQuantity * values.supplierUnitCost;
-        if (values.supplierUnitCost <= 0) return { ok: false, message: "Supplier cost must be greater than zero." };
-        if (values.supplierPaidAmount < 0 || values.supplierPaidAmount > supplierTotal) return { ok: false, message: "Supplier payment cannot exceed the supplier purchase total." };
-        const existingSupplier = data.suppliers.find((supplierRecord) => supplierRecord.id === values.supplierId || normalizeName(supplierRecord.name) === normalizeName(supplierName));
-        supplier = existingSupplier ? { ...existingSupplier, name: supplierName, contactNumber: supplierContact, company: supplierCompany } : { id: makeId("supplier"), name: supplierName, contactNumber: supplierContact, company: supplierCompany, createdAt: new Date().toISOString() };
-        purchaseTransaction = { id: makeId("purchase"), type: "purchase", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), source: "supplier", exchangeId, name: receivedProduct.name, productId: receivedProduct.id, unitCost: values.supplierUnitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity: receivedQuantity, amount: supplierTotal, paidAmount: values.supplierPaidAmount, outstandingAmount: supplierTotal - values.supplierPaidAmount, time: "Just now", createdAt: new Date().toISOString(), date, month };
-        purchasePayment = values.supplierPaidAmount > 0 ? { id: makeId("payment"), supplierId: supplier.id, amount: values.supplierPaidAmount, note: "Paid with exchange arrangement", date, time: "Just now", createdAt: new Date().toISOString() } : null;
+        return { ok: false, message: "Supplier-arranged replacement stock must be recorded from Add stock so the full purchase can be charged to capital." };
       }
 
       if (isSupabaseConfigured()) {
@@ -768,7 +863,7 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
             received_quantity: values.receivedQuantity ?? null,
             received_unit_selling_price: values.receivedUnitSellingPrice ?? null,
             receive_source: values.receiveSource ?? "inventory",
-            supplier_id: values.supplierId || (supplier && data.suppliers.some((supplierRecord) => supplierRecord.id === supplier.id) ? supplier.id : null),
+            supplier_id: values.supplierId || null,
             supplier_name: values.supplierName.trim(),
             supplier_contact_number: normalizeContact(values.supplierContactNumber),
             supplier_company: values.supplierCompany?.trim() ?? "",
@@ -786,15 +881,14 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
       const receivingUnitCost = receiveSource === "supplier" ? values.supplierUnitCost : receivedProduct?.costPrice ?? 0;
       const buybackTransaction: Transaction = { id: makeId("buyback"), type: "purchase", source: "customer-trade-in", exchangeId, name: givenProduct.name, productId: givenProduct.id, unitCost: values.tradeInUnitValue, party: customer.name, customerId: customer.id, customerContactNumber: customer.contactNumber, customerCode: customer.code, quantity: values.givenQuantity, amount: tradeInTotal, paidAmount: tradeInTotal, outstandingAmount: 0, time: "Just now", createdAt: new Date().toISOString(), date, month };
       const saleItems: SaleLineItem[] = !isBuyback && receivedProduct ? [{ productId: receivedProduct.id, name: receivedProduct.name, sku: receivedProduct.sku, color: receivedProduct.color, quantity: receivedQuantity, unitSellingPrice: receivedUnitSellingPrice, unitCost: receivingUnitCost, discount: 0, amount: saleTotal, profit: saleTotal - receivedQuantity * receivingUnitCost }] : [];
-      const saleTransaction: Transaction | undefined = !isBuyback && receivedProduct ? { id: makeId("sale"), type: "sale", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses, ...(purchaseTransaction ? [purchaseTransaction] : [])]), source: "exchange", exchangeId, name: receivedProduct.name, party: customer.name, customerId: customer.id, customerContactNumber: customer.contactNumber, customerCode: customer.code, quantity: receivedQuantity, amount: saleTotal, profit: saleItems[0].profit, tradeInCredit: tradeInTotal, amountDue, time: "Just now", createdAt: new Date().toISOString(), date, month, items: saleItems } : undefined;
-      const nextSuppliers = !isBuyback && receiveSource === "supplier" && supplier ? (data.suppliers.some((item) => item.id === supplier?.id) ? data.suppliers.map((item) => item.id === supplier?.id ? supplier as Supplier : item) : [supplier, ...data.suppliers]) : data.suppliers;
+      const saleTransaction: Transaction | undefined = !isBuyback && receivedProduct ? { id: makeId("sale"), type: "sale", invoiceNumber: createInvoiceNumber(date, [...data.transactions.filter((record) => record.type !== "transfer"), ...data.expenses]), source: "exchange", exchangeId, name: receivedProduct.name, party: customer.name, customerId: customer.id, customerContactNumber: customer.contactNumber, customerCode: customer.code, quantity: receivedQuantity, amount: saleTotal, profit: saleItems[0].profit, tradeInCredit: tradeInTotal, amountDue, time: "Just now", createdAt: new Date().toISOString(), date, month, items: saleItems } : undefined;
       const nextProducts = data.products.map((product) => {
         if (product.id === givenProduct.id) return { ...product, inStockQuantity: product.inStockQuantity + values.givenQuantity, received: product.received + values.givenQuantity, costPrice: values.tradeInUnitValue };
         if (!isBuyback && receivedProduct && product.id === receivedProduct.id) return { ...product, inStockQuantity: product.inStockQuantity + (receiveSource === "supplier" ? receivedQuantity : 0) - receivedQuantity, received: product.received + (receiveSource === "supplier" ? receivedQuantity : 0), sold: product.sold + receivedQuantity, costPrice: receiveSource === "supplier" ? values.supplierUnitCost : product.costPrice };
         return product;
       });
-      const nextTransactions = [ ...(saleTransaction ? [saleTransaction] : []), buybackTransaction, ...(purchaseTransaction ? [purchaseTransaction] : []), ...data.transactions];
-      commit({ products: nextProducts, transactions: nextTransactions, customers: data.customers.some((item) => item.id === customer.id) ? data.customers.map((item) => item.id === customer.id ? customer : item) : [customer, ...data.customers], suppliers: nextSuppliers, supplierPayments: purchasePayment ? [purchasePayment, ...data.supplierPayments] : data.supplierPayments, expenses: data.expenses, expenseCategories: data.expenseCategories, capitalAccounts: data.capitalAccounts, capitalEntries: data.capitalEntries });
+      const nextTransactions = [ ...(saleTransaction ? [saleTransaction] : []), buybackTransaction, ...data.transactions];
+      commit({ products: nextProducts, transactions: nextTransactions, customers: data.customers.some((item) => item.id === customer.id) ? data.customers.map((item) => item.id === customer.id ? customer : item) : [customer, ...data.customers], suppliers: data.suppliers, supplierPayments: data.supplierPayments, expenses: data.expenses, expenseCategories: data.expenseCategories, capitalAccounts: data.capitalAccounts, capitalEntries: data.capitalEntries });
       return { ok: true };
     },
     addSupplierPayment: async (values) => {
@@ -805,6 +899,7 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
       const paid = data.supplierPayments.filter((payment) => payment.supplierId === supplier.id).reduce((sum, payment) => sum + payment.amount, 0);
       const outstanding = purchased + (supplier.openingBalance ?? 0) - paid;
       if (values.amount > outstanding) return { ok: false, message: "Payment cannot exceed the supplier's outstanding balance." };
+      if (values.capitalId && data.transactions.some((transaction) => transaction.type === "purchase" && transaction.source === "supplier" && transaction.supplierId === supplier.id && transaction.capitalId && (transaction.outstandingAmount ?? 0) > 0)) return { ok: false, message: "This supplier balance is already reserved against capital-funded stock. Settle it with other funds." };
       if (values.capitalId && values.amount > getCapitalSummary(values.capitalId, data.capitalEntries, data.transactions, data.supplierPayments).available) return { ok: false, message: "The supplier payment exceeds the available capital." };
       if (isSupabaseConfigured()) {
         const supabase = createSupabaseBrowserClient();

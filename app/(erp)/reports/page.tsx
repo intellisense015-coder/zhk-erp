@@ -1,20 +1,15 @@
 "use client";
 
-import { CircleDollarSign, Filter, PackagePlus, Percent, ReceiptText, Search, ShoppingCart, TrendingUp, X } from "lucide-react";
+import { CircleDollarSign, PackagePlus, Percent, ReceiptText, Search, ShoppingCart, TrendingUp, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "../../../components/primitives/button";
 import { Modal, SelectField } from "../../../components/primitives/primitives";
 import { DataTable } from "../../../components/primitives/table";
 import { KpiCard } from "../../../components/ui/kpi-card";
-import { formatCurrency, getMonthOptions, getTransactionItems } from "../../../lib/erp-data";
+import { formatCurrency, getMonthOptions, getTransactionGrossProfit, getTransactionItems } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
 
 type ReportRow = { id: string; product: string; customerName: string; unitsSold: number; unitMargin: number; totalSales: number; totalSoldCost: number };
-
-function getTransactionGrossProfit(transaction: Parameters<typeof getTransactionItems>[0]) {
-  const items = getTransactionItems(transaction);
-  return items.length ? items.reduce((sum, item) => sum + item.profit, 0) : transaction.profit ?? 0;
-}
 
 export default function ReportsPage() {
   const { transactions, expenses } = useErpStore();
@@ -61,7 +56,7 @@ export default function ReportsPage() {
   return <div className="erp-content reports-page-enter">
     <div className="erp-page-heading">
       <div><p className="erp-eyebrow">Business performance</p><h1 className="erp-page-title">Reports</h1><p className="erp-page-subtitle">Performance for {periodLabel} across sales, purchases, expenses, and profit.</p></div>
-      <Button variant="secondary" className="font-sans text-sm font-medium text-[var(--text)] min-h-10 px-4 rounded-[15px] gap-2" onClick={() => { setDraftMonth(month); setFilterOpen(true); }}><Filter size={14} />Filters</Button>
+      <Button variant="secondary" className="font-sans text-sm font-medium text-[var(--text)] min-h-10 px-4 rounded-[15px] gap-2" onClick={() => { setDraftMonth(month); setFilterOpen(true); }}>Filters</Button>
     </div>
 
     <div className="kpi-grid inventory-kpis reports-kpis mb-[18px]">

@@ -199,6 +199,7 @@ function mapSupplierPayment(row: DbRow): SupplierPayment {
     time: text(row.created_at, 'Recorded'),
     createdAt: text(row.created_at, `${occurredOn}T00:00:00.000Z`),
     capitalId: optionalText(row.capital_id),
+    purchaseTransactionId: optionalText(row.purchase_transaction_id),
   }
 }
 

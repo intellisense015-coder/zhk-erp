@@ -1,6 +1,6 @@
 "use client";
 
-import { Crown, Eye, Filter, Pencil, Plus, Search, Trash2, UserCheck, UserPlus, Users, X } from "lucide-react";
+import { Crown, Eye, Pencil, Search, Trash2, UserCheck, UserPlus, Users, X } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import { KpiCard } from "../../../components/ui/kpi-card";
 import { Button } from "../../../components/primitives/button";
@@ -146,8 +146,8 @@ export default function CustomersPage() {
       <div className="erp-page-heading">
         <div><h1 className="erp-page-title">Customers</h1></div>
         <div className="flex gap-2">
-          <Button variant="secondary" className="font-sans text-sm font-medium text-[var(--text)] min-h-10 px-4 rounded-[15px] gap-2" onClick={openFilters}><Filter size={14} />Filters</Button>
-          <Button variant="brand" className="inventory-add-product-button font-sans text-sm font-medium text-white min-h-10 px-4 rounded-[15px] gap-2" onClick={openCreate}><Plus size={14} />Add customer</Button>
+          <Button variant="secondary" className="font-sans text-sm font-medium text-[var(--text)] min-h-10 px-4 rounded-[15px] gap-2" onClick={openFilters}>Filters</Button>
+          <Button variant="brand" className="inventory-add-product-button font-sans text-sm font-medium text-white min-h-10 px-4 rounded-[15px] gap-2" onClick={openCreate}>Add customer</Button>
         </div>
       </div>
 

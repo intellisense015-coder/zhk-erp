@@ -8,7 +8,10 @@ export type BusinessProfile = {
   gender: string;
 };
 
-export const BUSINESS_PROFILE_STORAGE_KEY = "solexa-business-profile";
+const LEGACY_SENSITIVE_STORAGE_KEYS = [
+  "solexa-business-profile",
+  "solexa-pin-passed",
+] as const;
 
 export const defaultBusinessProfile: BusinessProfile = {
   name: "Solexa by Intellisense",
@@ -20,15 +23,20 @@ export const defaultBusinessProfile: BusinessProfile = {
   gender: "",
 };
 
-export function readBusinessProfile() {
-  if (typeof window === "undefined") return null;
-  try {
-    const stored = window.localStorage.getItem(BUSINESS_PROFILE_STORAGE_KEY);
-    if (!stored) return null;
-    return { ...defaultBusinessProfile, ...JSON.parse(stored) } as BusinessProfile;
-  } catch {
-    return null;
+export function clearLegacySensitiveStorage() {
+  if (typeof window === "undefined") return;
+  for (const key of LEGACY_SENSITIVE_STORAGE_KEYS) {
+    window.localStorage.removeItem(key);
   }
+}
+
+/**
+ * Business identity is authoritative in Supabase. Never restore it from a
+ * browser cache or treat legacy PIN state as an authentication signal.
+ */
+export function readBusinessProfile() {
+  clearLegacySensitiveStorage();
+  return null;
 }
 
 export function hasCompletedOnboarding(profile: BusinessProfile | null) {

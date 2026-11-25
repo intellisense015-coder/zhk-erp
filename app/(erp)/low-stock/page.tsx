@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Boxes, CircleDollarSign, Filter, Search, X } from "lucide-react";
+import { AlertTriangle, Boxes, CircleDollarSign, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { KpiCard } from "../../../components/ui/kpi-card";
 import { Modal, SelectField } from "../../../components/primitives/primitives";
@@ -37,7 +37,7 @@ export default function LowStockPage() {
   const severityLabel = severityOptions.find((option) => option.value === severity)?.label ?? severity;
 
   return <div className="erp-content inventory-page-enter">
-    <div className="erp-page-heading"><div><h1 className="erp-page-title">Low stock</h1></div><Button variant="secondary" className="font-sans text-sm font-medium text-[var(--text)] min-h-10 px-4 rounded-[15px] gap-2" onClick={() => { setDraftCategory(category); setDraftSeverity(severity); setFilterOpen(true); }}><Filter size={14} />Filters</Button></div>
+    <div className="erp-page-heading"><div><h1 className="erp-page-title">Low stock</h1></div><Button variant="secondary" className="font-sans text-sm font-medium text-[var(--text)] min-h-10 px-4 rounded-[15px] gap-2" onClick={() => { setDraftCategory(category); setDraftSeverity(severity); setFilterOpen(true); }}>Filters</Button></div>
     <div className="kpi-grid inventory-kpis inventory-kpis-four mb-[18px]"><Kpi label="Low stock items" value={String(allLowStockCount)} note="Products below reorder level" icon={<Boxes size={16} />} /><Kpi label="Critical items" value={String(allCriticalCount)} note="Currently out of stock" icon={<AlertTriangle size={16} />} /><Kpi label="Units at risk" value={String(allUnitsAtRisk)} note="Units needing attention" icon={<Boxes size={16} />} /><Kpi label="Stock value" value={formatCompactCurrency(allStockValue)} note="Value of low stock" icon={<CircleDollarSign size={16} />} /></div>
     <div className="solexa-filter-chips">{category !== "All categories" && <FilterChip label={category} onRemove={() => { setCategory("All categories"); setDraftCategory("All categories"); }} />}{severity !== "all" && <FilterChip label={severityLabel} onRemove={() => { setSeverity("all"); setDraftSeverity("all"); }} />}{(category !== "All categories" || severity !== "all") && <button type="button" className="solexa-filter-clear" onClick={clearFilters}>Clear all</button>}</div>
     <label className="inventory-search-bar"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search product or SKU..." aria-label="Search product or SKU" />{search && <button type="button" onClick={() => setSearch("")} aria-label="Clear search"><X size={13} /></button>}</label>

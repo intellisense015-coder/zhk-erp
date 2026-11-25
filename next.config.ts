@@ -49,6 +49,12 @@ const nextConfig: NextConfig = {
   experimental: {
     agentFeedback: true,
     agentUpgrade: "security",
+    // Keep static generation deterministic on Windows CI/workstations. The
+    // default worker fan-out can race while creating route-group output dirs.
+    cpus: 1,
+    staticGenerationRetryCount: 1,
+    staticGenerationMaxConcurrency: 1,
+    staticGenerationMinPagesPerWorker: 100,
     // ERP routes hydrate auth, workspace access, and data in the browser.
     // Keep Next's instant-navigation validator opt-in until those routes
     // provide a real static shell/Suspense boundary for the async work.
@@ -62,6 +68,7 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
+    root: process.cwd(),
     rules: {
       "app/globals.css": {
         loaders: ["@tailwindcss/turbopack"],

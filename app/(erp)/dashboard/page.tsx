@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button, Modal } from "../../../components/primitives/primitives";
 import { KpiCard } from "../../../components/ui/kpi-card";
 import { Skeleton, TableSkeletonRows } from "../../../components/primitives/skeleton";
-import { formatCompactCurrency, formatCurrency, type Product } from "../../../lib/erp-data";
+import { formatCompactCurrency, formatCurrency, getTransactionGrossProfit, type Product } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
 
 const localDate = (date: Date) => { const year = date.getFullYear(); const month = String(date.getMonth() + 1).padStart(2, "0"); const day = String(date.getDate()).padStart(2, "0"); return `${year}-${month}-${day}`; };
@@ -23,7 +23,7 @@ export default function DashboardPage() {
   const sales = transactions.filter((transaction) => transaction.type === "sale");
   const todaySale = sales.filter((transaction) => today !== null && transaction.date === today).reduce((sum, transaction) => sum + transaction.amount, 0);
   const totalSale = sales.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const grossProfit = sales.reduce((sum, transaction) => sum + (transaction.profit ?? 0), 0);
+  const grossProfit = sales.reduce((sum, transaction) => sum + getTransactionGrossProfit(transaction), 0);
   const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const netProfit = grossProfit - totalExpenses;
   const paymentLedger = useMemo<PaymentLedgerEntry[]>(() => {
@@ -70,7 +70,7 @@ export default function DashboardPage() {
       </div>
       <LowStockCard lowStock={lowStock} onOpen={() => router.push("/low-stock")} />
     </div>
-    <Modal open={Boolean(kpi)} title={kpiTitle(kpi)} onClose={() => setKpi(null)}><div className="grid gap-3 p-5">{kpi === "today" && <InfoRow label="Today's sale" value={formatCurrency(todaySale)} tone="success" />}{kpi === "sales" && <InfoRow label="Total sale" value={formatCurrency(totalSale)} tone="success" />}{kpi === "stock" && products.map((product) => <InfoRow key={product.id} label={product.name} value={formatCurrency(product.inStockQuantity * product.costPrice)} />)}{kpi === "profit" && <><InfoRow label="Revenue" value={formatCurrency(totalSale)} /><InfoRow label="Gross profit" value={formatCurrency(grossProfit)} tone="success" /><InfoRow label="Expenses" value={formatCurrency(totalExpenses)} tone="error" /><InfoRow label="Net profit" value={formatCurrency(netProfit)} tone={netProfit >= 0 ? "success" : "error"} /></>}</div></Modal>
+    <Modal open={Boolean(kpi)} title={kpiTitle(kpi)} description="A clear breakdown of this dashboard metric." onClose={() => setKpi(null)}><div className="dashboard-kpi-modal">{kpi === "today" && <InfoRow label="Today's sale" value={formatCurrency(todaySale)} tone="success" />}{kpi === "sales" && <InfoRow label="Total sale" value={formatCurrency(totalSale)} tone="success" />}{kpi === "stock" && products.map((product) => <InfoRow key={product.id} label={product.name} value={formatCurrency(product.inStockQuantity * product.costPrice)} />)}{kpi === "profit" && <><InfoRow label="Revenue" value={formatCurrency(totalSale)} /><InfoRow label="Gross profit" value={formatCurrency(grossProfit)} tone="success" /><InfoRow label="Expenses" value={formatCurrency(totalExpenses)} tone="error" /><InfoRow label="Net profit" value={formatCurrency(netProfit)} tone={netProfit >= 0 ? "success" : "error"} /></>}</div></Modal>
   </div>;
 }
 
@@ -106,5 +106,5 @@ function LowStockCard({ lowStock, onOpen }: { lowStock: Product[]; onOpen: () =>
 function kpiTitle(kpi: string | null) { return kpi === "today" ? "Today's Sale" : kpi === "sales" ? "Total Sale" : kpi === "stock" ? "Total Stock Value" : "Total Profit"; }
 function ledgerTimestamp(entry: PaymentLedgerEntry) { if (entry.createdAt) return new Date(entry.createdAt).getTime(); const parsed = new Date(`${entry.date}T12:00:00`).getTime(); return Number.isNaN(parsed) ? 0 : parsed; }
 function formatPaymentDateTime(entry: PaymentLedgerEntry) { const dateTime = entry.createdAt ? new Date(entry.createdAt) : new Date(`${entry.date}T12:00:00`); const date = new Intl.DateTimeFormat("en-PK", { day: "numeric", month: "long", year: "numeric" }).format(dateTime); if (!entry.createdAt) return `${date} ${entry.time}`; const time = new Intl.DateTimeFormat("en-PK", { hour: "numeric", minute: "2-digit", hour12: true }).format(dateTime).toLowerCase(); return `${date} ${time}`; }
-function InfoRow({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "error" | "success" }) { return <div className="flex items-center justify-between gap-4 rounded-xl bg-[var(--surface-soft)] p-3"><span className="text-xs text-[var(--text-muted)]">{label}</span><span className={`text-sm font-bold ${tone === "error" ? "text-[var(--error)]" : tone === "success" ? "text-[var(--success)]" : "text-[var(--text-primary)]"}`}>{value}</span></div>; }
+function InfoRow({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "error" | "success" }) { return <div className="dashboard-kpi-row"><span>{label}</span><strong className={tone === "error" ? "is-error" : tone === "success" ? "is-success" : ""}>{value}</strong></div>; }
 function Metric({ label, value, note, icon, onClick }: { label: string; value: string; note: string; icon: React.ReactNode; onClick: () => void }) { return <KpiCard label={label} value={value} detail={note} icon={icon} onClick={onClick} />; }

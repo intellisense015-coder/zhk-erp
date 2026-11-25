@@ -35,8 +35,15 @@ export const purchaseSchema = z.object({
   quantity: positiveNumber,
   unitCost: positiveNumber,
   paidAmount: nonNegativeNumber,
-  capitalId: z.string().optional(),
-  fundingSource: z.enum(["capital", "supplier-credit", "other"]).optional(),
+  capitalId: z.string().trim().optional(),
+  fundingSource: z.enum(["capital", "supplier-credit", "other"]),
+}).superRefine((values, context) => {
+  if (values.fundingSource === "capital" && !values.capitalId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["capitalId"], message: "Capital account is required for capital-funded stock" });
+  }
+  if (values.fundingSource !== "capital" && values.capitalId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["capitalId"], message: "Remove the capital account for non-capital funding" });
+  }
 });
 
 export const purchaseEditSchema = z.object({

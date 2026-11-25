@@ -98,8 +98,8 @@ begin
 
     guarded_definition := regexp_replace(
       function_definition,
-      E'\n[[:space:]]*BEGIN[[:space:]]*\n',
-      E'\nBEGIN\n  PERFORM public.require_workspace_permission(target_workspace_id, ' || quote_literal(operation.permission_key) || ', ''edit'');\n',
+      chr(10) || '[[:space:]]*BEGIN[[:space:]]*' || chr(10),
+      chr(10) || 'BEGIN' || chr(10) || '  PERFORM public.require_workspace_permission(target_workspace_id, ' || quote_literal(operation.permission_key) || ', ''edit'');' || chr(10),
       1,
       1,
       'i'
@@ -113,13 +113,13 @@ begin
     -- Permission ownership is now expressed by the View/Edit matrix.
     guarded_definition := regexp_replace(
       guarded_definition,
-      E'[[:space:]]*if[[:space:]]+public\\.workspace_role\\(target_workspace_id\\)[[:space:]]+not[[:space:]]+in[[:space:]]*\\([[:space:]]*''owner''[[:space:]]*,[[:space:]]*''manager''[[:space:]]*\\)[[:space:]]+then[[:space:]]+raise[[:space:]]+exception[[:space:]]+''[^;]*;[[:space:]]*end[[:space:]]+if;',
+      '[[:space:]]*if[[:space:]]+public[.]workspace_role[(]target_workspace_id[)][[:space:]]+not[[:space:]]+in[[:space:]]*[(][[:space:]]*''owner''[[:space:]]*,[[:space:]]*''manager''[[:space:]]*[)][[:space:]]+then[[:space:]]+raise[[:space:]]+exception[[:space:]]+''[^;]*;[[:space:]]*end[[:space:]]+if;',
       '',
       'gi'
     );
     guarded_definition := regexp_replace(
       guarded_definition,
-      E'[[:space:]]*if[[:space:]]+public\\.workspace_role\\(target_workspace_id\\)[[:space:]]*<>[[:space:]]*''owner''[[:space:]]+then[[:space:]]+raise[[:space:]]+exception[[:space:]]+''[^;]*;[[:space:]]*end[[:space:]]+if;',
+      '[[:space:]]*if[[:space:]]+public[.]workspace_role[(]target_workspace_id[)][[:space:]]*<>[[:space:]]*''owner''[[:space:]]+then[[:space:]]+raise[[:space:]]+exception[[:space:]]+''[^;]*;[[:space:]]*end[[:space:]]+if;',
       '',
       'gi'
     );
@@ -153,8 +153,8 @@ begin
 
   guarded_definition := regexp_replace(
     function_definition,
-    E'\n[[:space:]]*BEGIN[[:space:]]*\n',
-    E'\nBEGIN\n  PERFORM public.require_workspace_permission(target_workspace_id, ''settings'', ''edit'');\n',
+    chr(10) || '[[:space:]]*BEGIN[[:space:]]*' || chr(10),
+    chr(10) || 'BEGIN' || chr(10) || '  PERFORM public.require_workspace_permission(target_workspace_id, ''settings'', ''edit'');' || chr(10),
     1,
     1,
     'i'

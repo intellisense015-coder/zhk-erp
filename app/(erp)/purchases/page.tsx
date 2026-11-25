@@ -1,27 +1,34 @@
 "use client";
 
-import { ArrowDownLeft, ClipboardList, Eye, Filter, PackagePlus, Pencil, Receipt, Search, X } from "lucide-react";
+import { ArrowDownLeft, ClipboardList, Eye, PackagePlus, Pencil, Receipt, Search, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { KpiCard } from "../../../components/ui/kpi-card";
 import { Button } from "../../../components/primitives/button";
-import { Modal, SelectField } from "../../../components/primitives/primitives";
+import { ConfirmDialog, Modal, SelectField } from "../../../components/primitives/primitives";
 import { PurchaseFormModal } from "../../../components/erp/purchase-form-modal";
 import { PurchaseEditModal } from "../../../components/erp/purchase-edit-modal";
+import { ProductFormModal } from "../../../components/erp/product-form-modal";
 import { Notification, type NotificationVariant } from "../../../components/primitives/notification";
 import { DataTable, TableBadge } from "../../../components/primitives/table";
 import { formatCompactCurrency, formatCurrency, formatTransactionTime, getMonthOptions } from "../../../lib/erp-data";
 import { useErpStore } from "../../../lib/erp-store";
 
 export default function PurchasesPage() {
-  const { products, transactions, suppliers, supplierPayments, addPurchase, updatePurchase } = useErpStore();
+  const { products, transactions, customers, suppliers, supplierPayments, addProduct, addPurchase, updatePurchase, cancelPurchase } = useErpStore();
   const router = useRouter();
   const purchases = useMemo(() => transactions.filter((transaction) => transaction.type === "purchase"), [transactions]);
   const monthOptions = useMemo(() => getMonthOptions(purchases), [purchases]);
-  const supplierOptions = useMemo(() => [
-    { value: "all", label: "All suppliers" },
-    ...Array.from(new Set(purchases.map((purchase) => purchase.party).filter(Boolean))).sort().map((value) => ({ value, label: value })),
-  ], [purchases]);
+  const supplierOptions = useMemo(() => {
+    const customerNames = new Set(customers.map((customer) => customer.name.trim().toLocaleLowerCase()).filter(Boolean));
+    const realSuppliers = suppliers
+      .filter((supplier) => supplier.name.trim() && !customerNames.has(supplier.name.trim().toLocaleLowerCase()))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    return [
+      { value: "all", label: "All suppliers" },
+      ...realSuppliers.map((supplier) => ({ value: supplier.id, label: supplier.name })),
+    ];
+  }, [customers, suppliers]);
   const [month, setMonth] = useState("all");
   const [supplier, setSupplier] = useState("all");
   const [draftMonth, setDraftMonth] = useState("all");
@@ -33,12 +40,16 @@ export default function PurchasesPage() {
   const [notification, setNotification] = useState<{ message: string; variant: NotificationVariant } | null>(null);
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<(typeof purchases)[number] | null>(null);
+  const [productOpen, setProductOpen] = useState(false);
+  const [productError, setProductError] = useState<string | null>(null);
 
   const visible = useMemo(() => purchases.filter((purchase) => {
     const matchesMonth = month === "all" || purchase.month === month;
-    const matchesSupplier = supplier === "all" || purchase.party === supplier;
+    const selectedSupplier = supplier !== "all" ? suppliers.find((record) => record.id === supplier) : undefined;
+    const matchesSupplier = supplier === "all" || purchase.supplierId === supplier || (!purchase.supplierId && Boolean(selectedSupplier) && purchase.party.trim().toLocaleLowerCase() === selectedSupplier?.name.trim().toLocaleLowerCase());
     return matchesMonth && matchesSupplier;
-  }), [month, purchases, supplier]);
+  }), [month, purchases, supplier, suppliers]);
   const searched = useMemo(() => visible.filter((purchase) => `${purchase.name} ${purchase.party} ${purchase.supplierCompany ?? ""}`.toLowerCase().includes(search.trim().toLowerCase())), [search, visible]);
   const totalPurchased = useMemo(() => purchases.reduce((sum, purchase) => sum + purchase.amount, 0), [purchases]);
   const totalUnits = useMemo(() => purchases.reduce((sum, purchase) => sum + purchase.quantity, 0), [purchases]);
@@ -62,6 +73,8 @@ export default function PurchasesPage() {
   };
   const openPurchase = () => { setPurchaseError(null); setNotification(null); setPurchaseOpen(true); };
   const closePurchase = () => { setPurchaseOpen(false); setPurchaseError(null); };
+  const openNewProduct = () => { closePurchase(); setProductError(null); setProductOpen(true); };
+  const saveProduct = async (values: Parameters<typeof addProduct>[0]) => { const result = await addProduct(values); if (!result.ok) { setProductError(result.message); return result; } setProductOpen(false); setProductError(null); setNotification({ variant: "success", message: "Product added successfully. Open Add stock to record its purchase." }); return result; };
   const savePurchase = async (values: Parameters<typeof addPurchase>[0]) => {
     const result = await addPurchase(values);
     if (result.ok) { closePurchase(); setNotification({ variant: "success", message: "Stock added and purchase recorded successfully." }); }
@@ -77,6 +90,13 @@ export default function PurchasesPage() {
     if (result.ok) { closeEdit(); setNotification({ variant: "success", message: "Purchase updated and inventory recalculated successfully." }); }
     else setEditError(result.message);
   };
+  const confirmCancel = async () => {
+    if (!cancelTarget) return;
+    const result = await cancelPurchase(cancelTarget.id);
+    if (result.ok) setNotification({ variant: "success", message: "Purchase cancelled; stock and capital reservation reversed." });
+    else setNotification({ variant: "error", message: result.message });
+    setCancelTarget(null);
+  };
 
   return (
     <div className="erp-content">
@@ -87,11 +107,9 @@ export default function PurchasesPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" onClick={() => { setDraftMonth(month); setDraftSupplier(supplier); setFilterOpen(true); }}>
-            <Filter size={15} />
             Filters
           </Button>
           <Button variant="brand" onClick={openPurchase}>
-            <PackagePlus size={15} />
             Add stock
           </Button>
         </div>
@@ -99,7 +117,7 @@ export default function PurchasesPage() {
 
       <div className="solexa-filter-chips">
         {month !== "all" && <span className="solexa-filter-chip">{monthOptions.find((option) => option.value === month)?.label ?? month}<button type="button" onClick={() => { setMonth("all"); setDraftMonth("all"); }} aria-label="Remove month filter"><X size={13} /></button></span>}
-        {supplier !== "all" && <span className="solexa-filter-chip">{supplier}<button type="button" onClick={() => { setSupplier("all"); setDraftSupplier("all"); }} aria-label="Remove supplier filter"><X size={13} /></button></span>}
+        {supplier !== "all" && <span className="solexa-filter-chip">{supplierOptions.find((option) => option.value === supplier)?.label ?? "Supplier"}<button type="button" onClick={() => { setSupplier("all"); setDraftSupplier("all"); }} aria-label="Remove supplier filter"><X size={13} /></button></span>}
         {(month !== "all" || supplier !== "all") && <button type="button" className="solexa-filter-clear" onClick={clearFilter}>Clear all</button>}
       </div>
 
@@ -125,27 +143,27 @@ export default function PurchasesPage() {
           <Receipt size={19} className="text-[var(--primary)]" />
         </div>
         <DataTable
-          className="inventory-table"
+          className="inventory-table purchases-table"
           data={searched}
           searchable={false}
           paginationOnly
           keyExtractor={(purchase) => purchase.id}
           emptyText="No purchase records found. Add stock from Inventory to create purchase history."
           columns={[
-            { key: "name", header: "Product", width: "14.2857%", sortable: true, accessor: (purchase) => <div><p className="font-semibold text-[var(--text-primary)]">{purchase.name}</p><p className="mt-1 text-[10px] font-medium text-[var(--text-secondary)]">{products.find((product) => product.id === purchase.productId)?.color || "Unspecified"}</p></div> },
-            { key: "party", header: "Supplier", width: "14.2857%", sortable: true, accessor: (purchase) => <span className="font-medium text-[var(--text-secondary)]">{purchase.party}</span> },
-            { key: "quantity", header: "Qty", width: "14.2857%", sortable: true, align: "right", accessor: (purchase) => `${purchase.quantity} units` },
-            { key: "unitCost", header: "Unit cost", width: "14.2857%", sortable: true, align: "right", accessor: (purchase) => formatCurrency(purchase.unitCost ?? (purchase.quantity ? purchase.amount / purchase.quantity : 0)) },
-            { key: "amount", header: "Purchased", width: "14.2857%", sortable: true, align: "right", accessor: (purchase) => <span className="font-bold text-[var(--text-primary)]">{formatCurrency(purchase.amount)}</span> },
+            { key: "name", header: "Product", width: "18%", sortable: true, accessor: (purchase) => <div><p className="font-semibold text-[var(--text-primary)]">{purchase.name}</p><p className="mt-1 text-[10px] font-medium text-[var(--text-secondary)]">{products.find((product) => product.id === purchase.productId)?.color || "Unspecified"}</p></div> },
+            { key: "party", header: "Supplier", width: "13%", sortable: true, accessor: (purchase) => <span className="font-medium text-[var(--text-secondary)]">{purchase.party}</span> },
+            { key: "quantity", header: "Qty", width: "7%", sortable: true, align: "right", accessor: (purchase) => `${purchase.quantity} units` },
+            { key: "unitCost", header: "Unit cost", width: "10%", sortable: true, align: "right", accessor: (purchase) => formatCurrency(purchase.unitCost ?? (purchase.quantity ? purchase.amount / purchase.quantity : 0)) },
+            { key: "amount", header: "Purchased", width: "11%", sortable: true, align: "right", accessor: (purchase) => <span className="font-bold text-[var(--text-primary)]">{formatCurrency(purchase.amount)}</span> },
             { key: "outstandingAmount", header: "Outstanding", width: "12%", sortable: true, align: "right", accessor: (purchase) => <TableBadge tone={(purchase.outstandingAmount ?? purchase.amount) > 0 ? "danger" : "success"}>{formatCurrency(purchase.outstandingAmount ?? Math.max(0, purchase.amount - (purchase.paidAmount ?? 0)))}</TableBadge> },
-            { key: "funding", header: "Funding", width: "12%", sortable: true, accessor: (purchase) => purchase.fundingSource === "capital" ? <TableBadge tone="success">Capital</TableBadge> : purchase.fundingSource === "supplier-credit" ? <TableBadge tone="warning">Credit</TableBadge> : <span className="text-[var(--text-muted)]">Other</span> },
-            { key: "date", header: "Recorded", width: "12%", sortable: true, accessor: (purchase) => <span className="text-[var(--text-muted)]">{formatTransactionTime(purchase)}</span> },
-             { key: "actions", header: "Actions", align: "right", accessor: (purchase) => <div className="table-row-actions"><button type="button" className="table-icon-button" aria-label={`View invoice for ${purchase.party}`} title="View invoice" onClick={(event) => { event.stopPropagation(); router.push(`/invoices?id=${purchase.id}&type=purchase`); }}><Eye size={14} /></button><button type="button" className="table-icon-button" aria-label={`Edit purchase from ${purchase.party}`} title="Edit purchase" onClick={(event) => { event.stopPropagation(); openEdit(purchase); }} disabled={!purchase.productId}><Pencil size={14} /></button></div> },
+            { key: "funding", header: "Funding", width: "9%", sortable: true, accessor: (purchase) => purchase.fundingSource === "capital" ? <TableBadge tone="success">Capital</TableBadge> : purchase.fundingSource === "supplier-credit" ? <TableBadge tone="warning">Credit</TableBadge> : <span className="text-[var(--text-muted)]">Other</span> },
+            { key: "date", header: "Recorded", width: "10%", sortable: true, accessor: (purchase) => <span className="text-[var(--text-muted)]">{formatTransactionTime(purchase)}</span> },
+            { key: "actions", header: "Actions", width: "10%", align: "right", accessor: (purchase) => <div className="table-row-actions" onClick={(event) => event.stopPropagation()}><button type="button" className="table-icon-button" aria-label={`View invoice for ${purchase.party}`} title="View invoice" onClick={() => router.push(`/invoices?id=${purchase.id}&type=purchase`)}><Eye size={14} /></button><button type="button" className="table-icon-button" aria-label={`Edit purchase from ${purchase.party}`} title="Edit purchase" onClick={() => openEdit(purchase)} disabled={!purchase.productId}><Pencil size={14} /></button><button type="button" className="table-icon-danger" aria-label={`Cancel purchase from ${purchase.party}`} title={purchase.source === "supplier" ? "Cancel purchase" : "Only supplier purchases can be cancelled"} onClick={() => setCancelTarget(purchase)} disabled={purchase.source !== "supplier"}><Trash2 size={15} /></button></div> },
           ]}
         />
       </section>
 
-      <Modal open={filterOpen} title="Filter purchases" description="Choose the supplier and month you want to review." onClose={() => setFilterOpen(false)}>
+      <Modal open={filterOpen} title="Filter purchases" description="Choose a real supplier and month to review." onClose={() => setFilterOpen(false)}>
         <div className="p-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <SelectField label="Supplier" value={draftSupplier} onChange={(event) => setDraftSupplier(event.target.value)}>{supplierOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectField>
@@ -158,8 +176,10 @@ export default function PurchasesPage() {
         </div>
       </Modal>
 
-      <PurchaseFormModal open={purchaseOpen} onClose={closePurchase} onSubmit={savePurchase} serverError={purchaseError} onDismissServerError={() => setPurchaseError(null)} />
+      <PurchaseFormModal open={purchaseOpen} onClose={closePurchase} onSubmit={savePurchase} onAddProduct={openNewProduct} serverError={purchaseError} onDismissServerError={() => setPurchaseError(null)} />
+      <ProductFormModal open={productOpen} onClose={() => { setProductOpen(false); setProductError(null); }} onSubmit={saveProduct} serverError={productError} onDismissServerError={() => setProductError(null)} />
       <PurchaseEditModal open={Boolean(editingPurchase)} productName={editingPurchase?.name ?? editingProduct?.name ?? "purchase"} purchaseQuantity={editingPurchase?.quantity ?? 1} purchaseUnitCost={editingPurchase?.unitCost ?? (editingPurchase?.quantity ? editingPurchase.amount / editingPurchase.quantity : 0)} paidAmount={editingPurchase?.paidAmount ?? 0} onClose={closeEdit} onSubmit={saveEdit} serverError={editError} onDismissServerError={() => setEditError(null)} />
+      <ConfirmDialog open={Boolean(cancelTarget)} className="confirm-dialog purchase-cancel-confirm" title="Cancel purchase?" description={cancelTarget ? `${cancelTarget.name} will be removed from purchase history and its stock/capital reservation will be reversed. Do you want to continue?` : undefined} descriptionClassName="text-[var(--error)]" confirmLabel="Cancel purchase" onClose={() => setCancelTarget(null)} onConfirm={confirmCancel} />
       <Notification message={notification?.message} variant={notification?.variant ?? "success"} onDismiss={() => setNotification(null)} />
 
     </div>

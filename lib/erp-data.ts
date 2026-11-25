@@ -297,6 +297,7 @@ export type SupplierPayment = {
   time: string;
   createdAt?: string;
   capitalId?: string;
+  purchaseTransactionId?: string;
 };
 
 export type Expense = {
@@ -367,10 +368,15 @@ export type Transaction = {
 };
 
 export const categories = ["All categories", "Mobiles", "Smartwatches", "Audio", "Chargers", "Cables", "Tablets", "Accessories"];
-export const formatCurrency = (value: number) => `Rs ${new Intl.NumberFormat("en-PK", { maximumFractionDigits: 0 }).format(value)}`;
+export function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+export const formatCurrency = (value: number) => `Rs ${new Intl.NumberFormat("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(roundMoney(value))}`;
 export const formatCompactCurrency = (value: number) => {
-  const absolute = Math.abs(value);
-  const sign = value < 0 ? "-" : "";
+  const rounded = roundMoney(value);
+  const absolute = Math.abs(rounded);
+  const sign = rounded < 0 ? "-" : "";
   const compactNumber = (divisor: number) => new Intl.NumberFormat("en-PK", { maximumFractionDigits: 1 }).format(absolute / divisor);
   if (absolute >= 1_000_000) return `Rs ${sign}${compactNumber(1_000_000)}M`;
   if (absolute >= 1_000) return `Rs ${sign}${compactNumber(1_000)}K`;
@@ -389,6 +395,12 @@ export function getMonthOptions(records: Array<{ month?: string }>) {
 
 export function getTransactionItems(transaction: Transaction): SaleLineItem[] {
   return transaction.items ?? [];
+}
+
+export function getTransactionGrossProfit(transaction: Transaction) {
+  if (transaction.type !== "sale") return 0;
+  const items = getTransactionItems(transaction);
+  return roundMoney(items.length ? items.reduce((sum, item) => sum + item.profit, 0) : transaction.profit ?? 0);
 }
 
 export function formatTransactionTime(transaction: Transaction) {
@@ -412,12 +424,14 @@ export function formatLongDate(value: string) {
 }
 
 export function getCapitalSummary(capitalId: string, entries: CapitalEntry[], transactions: Transaction[], supplierPayments: SupplierPayment[]) {
-  const contributed = entries.filter((entry) => entry.capitalId === capitalId && entry.type === "contribution").reduce((sum, entry) => sum + entry.amount, 0);
-  const withdrawn = entries.filter((entry) => entry.capitalId === capitalId && entry.type === "withdrawal").reduce((sum, entry) => sum + entry.amount, 0);
-  const purchases = transactions.filter((transaction) => transaction.type === "purchase" && transaction.capitalId === capitalId).reduce((sum, transaction) => sum + (transaction.paidAmount ?? 0), 0);
-  // The initial payment recorded with a purchase is represented both on the
-  // purchase and in the supplier-payment ledger. Count it once here.
-  const payments = supplierPayments.filter((payment) => payment.capitalId === capitalId && payment.note !== "Paid with purchase").reduce((sum, payment) => sum + payment.amount, 0);
-  const used = purchases + payments;
-  return { contributed, withdrawn, used, available: contributed - withdrawn - used };
+  const contributed = roundMoney(entries.filter((entry) => entry.capitalId === capitalId && entry.type === "contribution").reduce((sum, entry) => sum + entry.amount, 0));
+  const withdrawn = roundMoney(entries.filter((entry) => entry.capitalId === capitalId && entry.type === "withdrawal").reduce((sum, entry) => sum + entry.amount, 0));
+  // Capital-backed stock consumes the full inventory cost, not only the
+  // amount paid to the supplier at the time of entry.
+  const purchases = roundMoney(transactions.filter((transaction) => transaction.type === "purchase" && transaction.source === "supplier" && transaction.capitalId === capitalId).reduce((sum, transaction) => sum + transaction.amount, 0));
+  // Payments linked to a purchase are already represented by the purchase
+  // reservation and must never be counted a second time.
+  const payments = roundMoney(supplierPayments.filter((payment) => payment.capitalId === capitalId && !payment.purchaseTransactionId && payment.note !== "Paid with purchase" && payment.note !== "Paid with exchange arrangement").reduce((sum, payment) => sum + payment.amount, 0));
+  const used = roundMoney(purchases + payments);
+  return { contributed, withdrawn, used, available: roundMoney(contributed - withdrawn - used) };
 }

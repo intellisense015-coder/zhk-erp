@@ -1,8 +1,7 @@
 "use client";
 
-import { CheckCircle2, X, XCircle } from "lucide-react";
-import { useEffect } from "react";
-import { createPortal } from "react-dom";
+import { sileo } from "sileo";
+import { useEffect, useRef } from "react";
 
 export type NotificationVariant = "success" | "error";
 
@@ -14,20 +13,35 @@ type NotificationProps = {
 };
 
 export function Notification({ message, variant, onDismiss, duration = 5000 }: NotificationProps) {
+  const lastToastRef = useRef<string | null>(null);
+  const onDismissRef = useRef(onDismiss);
+
   useEffect(() => {
-    if (!message || !onDismiss) return undefined;
-    const timer = window.setTimeout(onDismiss, duration);
-    return () => window.clearTimeout(timer);
-  }, [duration, message, onDismiss]);
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
 
-  if (!message) return null;
-  const Icon = variant === "success" ? CheckCircle2 : XCircle;
+  useEffect(() => {
+    if (!message) {
+      lastToastRef.current = null;
+      return undefined;
+    }
 
-  const notification = <div className={`solexa-notification solexa-notification-${variant}`} role={variant === "error" ? "alert" : "status"} aria-live={variant === "error" ? "assertive" : "polite"}>
-    <Icon size={17} aria-hidden="true" />
-    <span>{message}</span>
-    {onDismiss && <button type="button" className="solexa-notification-dismiss" aria-label="Dismiss notification" onClick={onDismiss}><X size={15} /></button>}
-  </div>;
+    const toastKey = `${variant}:${message}`;
+    if (lastToastRef.current === toastKey) return undefined;
+    lastToastRef.current = toastKey;
 
-  return typeof document === "undefined" ? null : createPortal(notification, document.body);
+    const toastId = sileo[variant]({
+      title: variant === "error" ? "Error" : "Success",
+      description: message,
+      duration,
+    });
+
+    const timer = window.setTimeout(() => onDismissRef.current?.(), duration);
+    return () => {
+      window.clearTimeout(timer);
+      sileo.dismiss(toastId);
+    };
+  }, [duration, message, variant]);
+
+  return null;
 }

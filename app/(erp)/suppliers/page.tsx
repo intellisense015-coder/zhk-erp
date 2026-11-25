@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, CircleDollarSign, Crown, Filter, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
+import { Building2, CircleDollarSign, Crown, Pencil, Search, Trash2, Users, X } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import { KpiCard } from "../../../components/ui/kpi-card";
 import { Button } from "../../../components/primitives/button";
@@ -159,8 +159,8 @@ export default function SuppliersPage() {
       <div className="erp-page-heading">
         <div><h1 className="erp-page-title">Suppliers</h1></div>
         <div className="flex gap-2">
-          <Button variant="secondary" className="font-sans text-sm font-medium text-[var(--text)] min-h-10 px-4 rounded-[15px] gap-2" onClick={openFilters}><Filter size={14} />Filters</Button>
-          <Button variant="brand" className="inventory-add-product-button font-sans text-sm font-medium text-white min-h-10 px-4 rounded-[15px] gap-2" onClick={openCreate}><Plus size={14} />Add supplier</Button>
+          <Button variant="secondary" className="font-sans text-sm font-medium text-[var(--text)] min-h-10 px-4 rounded-[15px] gap-2" onClick={openFilters}>Filters</Button>
+          <Button variant="brand" className="inventory-add-product-button font-sans text-sm font-medium text-white min-h-10 px-4 rounded-[15px] gap-2" onClick={openCreate}>Add supplier</Button>
         </div>
       </div>
 

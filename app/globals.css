@@ -454,13 +454,6 @@ body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSyst
 .settings-profile-row p { margin: 0 0 5px; color: var(--text-muted); font-size: 10px; }
 .settings-profile-row strong { display: block; color: var(--text-primary); font-size: 12px; line-height: 1.35; word-break: break-word; }
 .settings-success { display: flex; align-items: center; gap: 7px; margin: 18px 0 0; border-radius: 12px; background: var(--success-glow); padding: 12px 14px; color: var(--success); font-size: 11px; font-weight: 700; }
-.solexa-notification { position: fixed; top: 86px; left: 50%; z-index: 1200; display: flex; align-items: flex-start; gap: 10px; width: min(460px, calc(100vw - 32px)); max-height: min(120px, calc(100vh - 104px)); overflow: auto; transform: translateX(-50%); border: 1px solid transparent; border-radius: 16px; box-shadow: var(--shadow-md); padding: 14px 15px; font-size: 12px; font-weight: 800; line-height: 1.4; }
-.solexa-notification-success { border-color: color-mix(in srgb, var(--success) 24%, transparent); background: var(--success-glow); color: var(--success); }
-.solexa-notification-error { border-color: color-mix(in srgb, var(--error) 24%, transparent); background: var(--error-glow); color: var(--error); }
-.solexa-notification > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
-.solexa-notification-dismiss { display: grid; place-items: center; flex: 0 0 auto; border: 0; border-radius: 8px; background: transparent; color: currentColor; cursor: pointer; padding: 2px; }
-.solexa-notification-dismiss:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
-@media (max-width: 640px) { .solexa-notification { top: 72px; width: min(460px, calc(100vw - 20px)); border-radius: 13px; padding: 12px 13px; font-size: 11px; } }
 .settings-side-stack { display: grid; gap: 18px; }
 .settings-info-card { position: relative; min-height: 164px; padding: 22px; }
 .settings-info-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--primary-soft); color: var(--primary); }
@@ -651,6 +644,114 @@ input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
   .product-status-preview small { width: 100%; margin-left: 0; }
 }
 
+/* Sileo mounts its viewport at z-index 50 by default, which places a toast
+   behind the shared modal layer (z-index 1000). Notifications are global
+   feedback and must remain visible above dialogs and their backdrops. */
+[data-sileo-viewport] {
+  z-index: 2000 !important;
+  isolation: isolate;
+}
+[data-sileo-viewport] [data-sileo-title] {
+  color: var(--text-primary) !important;
+  font-weight: 800 !important;
+}
+[data-sileo-viewport] [data-sileo-description] {
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
+  line-height: 1.45 !important;
+  text-shadow: none !important;
+}
+
+.purchase-funding-explanation {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+  border-radius: 14px;
+  background: var(--surface-soft-2);
+  padding: 12px 14px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.purchase-funding-explanation strong {
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 800;
+}
+.purchase-funding-explanation p { margin: 0; }
+.purchase-funding-explanation p:last-child { color: var(--text-muted); font-size: 10px; }
+
+/* Invoice and detail-modal polish. */
+.invoice-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  margin-bottom: 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-solid) 82%, var(--primary-soft));
+  padding: 0 12px;
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 8%, transparent);
+  transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease;
+}
+.invoice-back-button:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-hover); transform: translateY(-1px); }
+.invoice-back-button:active { transform: translateY(0) scale(.98); }
+.dashboard-kpi-modal { display: grid; gap: 10px; padding: 20px; }
+.dashboard-kpi-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; border: 1px solid color-mix(in srgb, var(--border) 55%, transparent); border-radius: 14px; background: var(--surface-soft-2); padding: 12px 14px; }
+.dashboard-kpi-row span { min-width: 0; color: var(--text-muted); font-size: 11px; }
+.dashboard-kpi-row strong { color: var(--text-primary); font-size: 14px; font-weight: 800; text-align: right; }
+.dashboard-kpi-row strong.is-success { color: var(--success); }
+.dashboard-kpi-row strong.is-error { color: var(--error); }
+.expense-details-modal { display: grid; gap: 16px; padding: 20px; }
+.expense-details-amount { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; border-radius: 16px; background: color-mix(in srgb, var(--error) 10%, var(--surface-soft-2)); padding: 16px; }
+.expense-details-amount span, .expense-details-grid span, .expense-details-note span { color: var(--text-muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.expense-details-amount strong { color: var(--error); font-size: 22px; letter-spacing: -.04em; }
+.expense-details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.expense-details-grid > div { display: grid; gap: 5px; min-width: 0; border: 1px solid color-mix(in srgb, var(--border) 55%, transparent); border-radius: 12px; background: var(--surface-soft-2); padding: 12px; }
+.expense-details-grid strong { overflow-wrap: anywhere; color: var(--text-primary); font-size: 12px; }
+.expense-details-note { display: grid; gap: 6px; border-top: 1px solid var(--border); padding-top: 14px; }
+.expense-details-note p { margin: 0 0 6px; color: var(--text-primary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .invoice-back-button { margin-bottom: 8px; }
+  .dashboard-kpi-modal, .expense-details-modal { padding: 16px; }
+  .expense-details-grid { grid-template-columns: 1fr; }
+}
+
+/* Shared narrow-screen contract for phones, folded phones, and compact tablets. */
+@media (max-width: 760px) {
+  html, body { max-width: 100%; overflow-x: hidden; }
+  .erp-content { width: 100%; min-width: 0; }
+  .erp-page-heading > div:first-child { max-width: 100%; }
+  .erp-page-title, .erp-page-subtitle { overflow-wrap: anywhere; }
+  .solexa-header, .header-actions, .header-left { min-width: 0; max-width: 100%; }
+  .header-actions { flex-wrap: wrap; }
+  .header-search { min-width: 0 !important; max-width: 100%; }
+  .solexa-table-root, .solexa-table-frame { width: 100%; max-width: 100%; overflow-x: hidden !important; }
+  .solexa-table-root table { width: 100% !important; min-width: 0 !important; table-layout: fixed !important; }
+  .solexa-table-head th, .solexa-table-row td { min-width: 0 !important; padding: 11px 8px !important; overflow-wrap: anywhere; word-break: break-word; }
+  .solexa-table-head th { font-size: 8px; letter-spacing: .04em; }
+  .solexa-table-row td { font-size: 10px; }
+  .table-row-actions { flex-wrap: wrap; gap: 4px; }
+  .table-row-actions button { flex: 0 0 30px; }
+  .modal-card, .primitive-dialog { width: min(calc(100vw - 24px), 560px) !important; max-width: calc(100vw - 24px) !important; max-height: calc(100dvh - 24px) !important; }
+  .modal-header, .primitive-dialog-header { padding-inline: 16px !important; }
+  .modal-body > form, .modal-body > .p-5 { padding-inline: 16px !important; }
+  .modal-footer, .primitive-dialog-actions { flex-wrap: wrap; }
+  .modal-footer > button, .primitive-dialog-actions > button { flex: 1 1 120px; min-width: 0; }
+}
+@media (max-width: 380px) {
+  .erp-content { padding-inline: 10px !important; }
+  .erp-page-heading > div:last-child { grid-template-columns: 1fr !important; }
+  .erp-page-heading > div:last-child > button, .erp-page-heading > div:last-child > a { min-height: 38px; }
+  .solexa-table-pagination { padding-inline: 10px !important; }
+  .modal-card, .primitive-dialog { width: calc(100vw - 16px) !important; max-width: calc(100vw - 16px) !important; }
+}
+
 @media print {
   @page { size: A4; margin: 12mm; }
   body * { visibility: hidden !important; }
@@ -784,6 +885,17 @@ input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
 .capital-page > .erp-card {
   margin-top: 24px;
 }
+.capital-page .capital-add-button {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+.capital-page .capital-action-button {
+  font-weight: 400 !important;
+}
+html[data-theme="dark"] .capital-page .capital-action-button,
+.dark .capital-page .capital-action-button {
+  box-shadow: none !important;
+}
 
 /* Shared workflow refinements. */
 .modal-card, .primitive-dialog, .custom-select-menu,
@@ -853,6 +965,12 @@ input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
 .erp-page-title { font-size: clamp(28px, 2.1vw, 34px); font-weight: 500; letter-spacing: -.045em; line-height: 1.12; }
 .erp-eyebrow, .erp-page-subtitle { display: none !important; }
 .erp-page-heading > div:last-child:not(:first-child) { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.erp-page-heading .primitive-btn { font-weight: 400 !important; }
+html[data-theme="dark"] .erp-page-heading .primitive-btn,
+.dark .erp-page-heading .primitive-btn { box-shadow: none !important; transform: none !important; filter: none !important; }
+.invoice-action-button { font-weight: 400; }
+html[data-theme="dark"] .invoice-action-button,
+.dark .invoice-action-button { box-shadow: none !important; transform: none !important; filter: none !important; }
 @media (max-width: 760px) {
   .erp-content { padding: 16px 18px 42px; }
   .erp-page-title { font-size: 30px; }
@@ -1104,6 +1222,8 @@ input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
 .product-form-card { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 10px; }
 .product-form-card > .col-span-full { grid-column: 1 / -1; }
 .product-form-modal .product-modal-compact-label > span:first-child { display: block; margin-bottom: 8px; color: var(--text-primary); font-size: 10px !important; font-weight: 600; line-height: 1.2; }
+.product-capital-selection-row { display: flex !important; flex-flow: row nowrap !important; align-items: flex-end !important; gap: 10px !important; width: 360px; max-width: 100%; }
+.product-capital-selection-field { flex: 0 0 calc((100% - 10px) / 2); min-width: 0; }
 .custom-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; cursor: pointer; }
 .custom-select-menu { z-index: 1200 !important; border: 0 !important; border-radius: 14px !important; background: var(--surface-solid) !important; box-shadow: var(--dialog-shadow) !important; padding: 8px !important; }
 .custom-select-search { height: 40px; border: 0 !important; border-radius: 10px !important; background: var(--surface-soft-2) !important; padding: 0 10px !important; }
@@ -1641,6 +1761,11 @@ html[data-theme="light"] .auth-form-pane { background: #fff !important; }
 .inventory-table .table-row-actions { gap: 8px; }
 .inventory-table .table-icon-button,
 .inventory-table .table-icon-danger { width: 30px !important; height: 30px !important; flex: 0 0 30px; }
+.purchases-table table { min-width: 0 !important; table-layout: fixed !important; }
+.purchases-table .solexa-table-head th,
+.purchases-table .solexa-table-row td { overflow-wrap: anywhere; }
+.purchases-table .table-row-actions { justify-content: flex-end; }
+.purchases-table .table-icon-danger:disabled { cursor: not-allowed; opacity: .38; }
 
 /* Transfers: keep the editor compact and the history columns aligned. */
 .transfers-page .transfer-editor-card .erp-card-title,
@@ -1667,8 +1792,6 @@ html[data-theme="light"] .auth-form-pane { background: #fff !important; }
 .transfer-entity-cell { display: grid; gap: 3px; min-width: 0; }
 .transfer-entity-cell span { overflow: hidden; color: var(--text-primary); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .transfer-entity-cell small { color: var(--text-muted); font-size: 10px; }
-.solexa-notification-success { background: var(--surface-solid) !important; border-color: var(--success) !important; }
-.solexa-notification-error { background: var(--surface-solid) !important; border-color: var(--error) !important; }
 @media (max-width: 900px) {
   .transfer-form-grid,
   .transfer-form-grid-details { grid-template-columns: 1fr; }
@@ -1686,6 +1809,7 @@ html[data-theme="light"] .auth-form-pane { background: #fff !important; }
 .modal-heading-copy { min-width: 0; }
 .modal-description { margin: 2px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.35; }
 .confirm-dialog .modal-description { color: var(--text-primary) !important; }
+.purchase-cancel-confirm .modal-description { color: var(--error) !important; font-weight: 700 !important; }
 .confirm-dialog .primitive-btn-secondary,
 .confirm-dialog .cancel-button { border: 1px solid var(--border) !important; background: var(--surface-soft) !important; color: var(--text-secondary) !important; box-shadow: none !important; }
 .confirm-dialog .primitive-btn-secondary:hover,
@@ -3430,6 +3554,37 @@ html[data-theme="dark"] .pos-page .pos-complete-button svg,
 .purchase-edit-actions .primitive-btn {
   min-width: 116px;
 }
+
+/* Final responsive overrides: keep dense tables and dialogs inside the viewport. */
+@media (max-width: 760px) {
+  .header-search-wrap { min-width: 0 !important; max-width: 100%; }
+  .dashboard-activity-table-wrap,
+  .supplier-ledger-card .supplier-ledger-table { overflow-x: hidden !important; }
+  .dashboard-activity-table,
+  .supplier-ledger-card .supplier-ledger-table table { width: 100% !important; min-width: 0 !important; table-layout: fixed !important; }
+  .dashboard-activity-table th,
+  .dashboard-activity-table td,
+  .supplier-ledger-card .supplier-ledger-head,
+  .supplier-ledger-card .supplier-ledger-row { min-width: 0 !important; padding: 10px 8px !important; overflow-wrap: anywhere; word-break: break-word; }
+  .dashboard-activity-table th { font-size: 8px; }
+  .dashboard-activity-table td,
+  .supplier-ledger-card .supplier-ledger-row { font-size: 10px; }
+  .dashboard-payment-table .dashboard-col-datetime,
+  .dashboard-payment-table .dashboard-col-payment-type,
+  .dashboard-payment-table .dashboard-col-payment-party,
+  .dashboard-payment-table .dashboard-col-payment-amount { width: 25% !important; }
+  .pos-layout { grid-template-columns: minmax(0, 1fr); }
+  .pos-order-panel { position: static; max-height: none; }
+  .pos-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pos-catalog-toolbar { align-items: stretch; flex-direction: column; }
+  .pos-search { width: 100%; }
+}
+@media (max-width: 480px) {
+  .pos-product-grid { grid-template-columns: 1fr; }
+  .pos-customer-fields, .pos-two-fields { grid-template-columns: 1fr; }
+  .dashboard-activity-table th, .dashboard-activity-table td { padding: 8px 5px !important; font-size: 9px; }
+  .supplier-ledger-card .supplier-ledger-head, .supplier-ledger-card .supplier-ledger-row { padding: 8px 5px !important; font-size: 9px; }
+}
 @media (max-width: 620px) {
   .modal-card.purchase-edit-modal-card {
     width: min(100%, calc(100vw - 24px)) !important;
@@ -3444,4 +3599,99 @@ html[data-theme="dark"] .pos-page .pos-complete-button svg,
   .purchase-edit-summary-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Final Solexa surface contract. Keep cards borderless and make the shared
+   primitives—not individual pages—the source of truth for visual hierarchy. */
+.erp-card,
+.soft-card,
+.stat-card,
+.kpi-card,
+.solexa-table-root,
+.modal-card,
+.primitive-dialog {
+  border: 0 !important;
+}
+.erp-card,
+.soft-card {
+  border-radius: 24px;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-out);
+}
+.erp-card-header { border-bottom: 0 !important; }
+.modal-card,
+.primitive-dialog {
+  background: var(--surface-solid) !important;
+  box-shadow: var(--dialog-shadow) !important;
+}
+.modal-description {
+  color: var(--text-secondary) !important;
+  font-size: 12px !important;
+  font-weight: 500;
+  line-height: 1.5;
+  opacity: 1 !important;
+}
+.expense-details-modal,
+.dashboard-kpi-modal { color: var(--text-primary); }
+.expense-details-grid > div {
+  border: 0 !important;
+  background: var(--surface-soft-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 7%, transparent);
+}
+.expense-details-note p {
+  color: var(--text-primary) !important;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+/* Canonical KPI rhythm shared by every module page. */
+.stat-card,
+.kpi-card {
+  min-height: 132px !important;
+  padding: 18px !important;
+  border-radius: 24px !important;
+  background: var(--surface-solid) !important;
+  box-shadow: var(--shadow-out) !important;
+}
+.stat-card .stat-icon {
+  top: 18px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+}
+.stat-card .stat-label {
+  max-width: calc(100% - 48px);
+  color: var(--text-muted) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1.25;
+}
+.stat-card > strong {
+  margin-top: 18px !important;
+  color: var(--text-primary) !important;
+  font-size: 24px !important;
+  font-weight: 700 !important;
+  letter-spacing: -.04em !important;
+  line-height: 1.1;
+}
+.stat-card > small {
+  margin-top: 8px !important;
+  color: var(--text-muted) !important;
+  font-size: 10px !important;
+  line-height: 1.35;
+}
+.stat-card .kpi-value-warning { color: var(--warning) !important; }
+.stat-card .kpi-value-danger { color: var(--error) !important; }
+.stat-card .kpi-value-success { color: var(--success) !important; }
+html[data-theme="dark"] .stat-card,
+.dark .stat-card,
+html[data-theme="dark"] .kpi-card,
+.dark .kpi-card { box-shadow: none !important; }
+
+@media (max-width: 760px) {
+  .stat-card,
+  .kpi-card { min-height: 118px !important; padding: 15px !important; }
+  .stat-card > strong { margin-top: 14px !important; font-size: 20px !important; }
 }

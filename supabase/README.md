@@ -1,10 +1,4 @@
-# Supabase integration
+# Supabase migrations
 
-This directory contains the versioned database schema, RLS policies, security
-definer RPCs, and migration history for Solexa.
-
-The current migration set provides authenticated workspace reads, secure product
-mutations, and atomic purchase/stock-entry, purchase-edit, sale-edit, and
-exchange/buyback operations. Remaining
-ERP writes are intentionally staged and continue to use the local store until
-their secure RPCs, audit coverage, and end-to-end tests are complete.
+Numbered SQL files in `migrations/` are applied in timestamp order. The
+`tests/production_contract.sql` file is a read-only schema/RPC contract check.

@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "../primitives/button";
 import { Field, Modal, SelectField } from "../primitives/primitives";
 import { Notification } from "../primitives/notification";
-import { brandLogoDomains, categories, formatCurrency, getProductColorOptions, productBrands, type Product } from "../../lib/erp-data";
+import { brandLogoDomains, categories, formatCurrency, getCapitalSummary, getProductColorOptions, productBrands, type Product } from "../../lib/erp-data";
 import { productSchema, type ProductFormValues } from "../../lib/validations";
 import { useErpStore } from "../../lib/erp-store";
 
@@ -66,10 +66,11 @@ function BrandOption({ brand }: { brand: (typeof productBrands)[number] }) {
   return <span className="product-brand-option"><span className={`product-brand-logo ${hasLogo ? "" : "product-brand-fallback"}`}>{hasLogo ? <img src={logoUrl} alt={`${brand.label} logo`} aria-hidden="true" onError={() => setLogoIndex((current) => current + 1)} /> : brand.mark}</span><span>{brand.label}</span></span>;
 }
 
-type ProductFormModalProps = { open: boolean; product?: Product | null; onClose: () => void; onSubmit: (values: ProductFormValues) => { ok: true } | { ok: false; message: string } | void | Promise<{ ok: true } | { ok: false; message: string } | void>; serverError?: string | null; onDismissServerError?: () => void };
+type ProductSubmitValues = ProductFormValues & { capitalId?: string };
+type ProductFormModalProps = { open: boolean; product?: Product | null; onClose: () => void; onSubmit: (values: ProductSubmitValues) => { ok: true } | { ok: false; message: string } | void | Promise<{ ok: true } | { ok: false; message: string } | void>; serverError?: string | null; onDismissServerError?: () => void };
 
 export function ProductFormModal({ open, product, onClose, onSubmit, serverError, onDismissServerError }: ProductFormModalProps) {
-  const { suppliers, hydrated } = useErpStore();
+  const { suppliers, capitalAccounts, capitalEntries, transactions, supplierPayments, hydrated } = useErpStore();
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset, setValue, control } = useForm<ProductFormValues>({ resolver: zodResolver(productSchema), defaultValues: product ? { ...product, brand: product.brand ?? "other", model: product.model ?? product.name, vendorName: product.vendorName ?? "", vendorContactNumber: product.vendorContactNumber ?? "", vendorCompany: product.vendorCompany ?? "", imageUrl: product.imageUrl ?? "", imageSource: product.imageSource } : emptyProduct });
   const brandValue = useWatch({ control, name: "brand" }) || emptyProduct.brand;
   const modelValue = useWatch({ control, name: "model" }) || "";
@@ -89,13 +90,16 @@ export function ProductFormModal({ open, product, onClose, onSubmit, serverError
     ...catalogModels.filter((item) => item.category === categoryValue).map((item) => [item.name.toLowerCase(), { name: item.name, category: item.category }] as const),
   ]).values());
   const colorOptions = Array.from(new Set([...(catalogModel?.colors ?? []), ...getProductColorOptions(brandValue, modelValue, categoryValue, colorValue)]));
-  const vendorNames = Array.from(new Set([...suppliers.map((supplier) => supplier.name), ...(product?.vendorName ? [product.vendorName] : [])]));
+  const vendorNames = Array.from(new Set(suppliers.map((supplier) => supplier.name.trim()).filter(Boolean))).sort((left, right) => left.localeCompare(right));
   const selectedSupplier = suppliers.find((supplier) => supplier.name.trim().toLowerCase() === currentVendor.trim().toLowerCase());
   const selectedVendor = selectedSupplier?.contactNumber?.trim() ? currentVendor : "__new_vendor__";
   const showNewVendor = selectedVendor === "__new_vendor__";
   const totalCost = costPrice * quantity;
   const perPieceProfit = sellingPrice - costPrice;
   const [formError, setFormError] = useState<string | null>(null);
+  const [capitalId, setCapitalId] = useState("");
+  const selectedCapital = capitalAccounts.find((account) => account.id === capitalId);
+  const selectedCapitalAvailable = selectedCapital ? getCapitalSummary(selectedCapital.id, capitalEntries, transactions, supplierPayments).available : 0;
 
   useEffect(() => {
     const supplier = product?.vendorName ? suppliers.find((item) => item.name.trim().toLowerCase() === product.vendorName?.trim().toLowerCase()) : undefined;
@@ -153,12 +157,16 @@ export function ProductFormModal({ open, product, onClose, onSubmit, serverError
   const editing = Boolean(product);
   const submit = async (values: ProductFormValues) => {
     setFormError(null);
+    if (!editing && values.inStockQuantity > 0 && !capitalId) {
+      setFormError("Select a capital account for the opening stock.");
+      return;
+    }
     if (showNewVendor && !values.vendorContactNumber.trim()) {
       setVendorError("A unique supplier contact number is required for a new supplier.");
       return;
     }
     setVendorError(null);
-    await onSubmit(values);
+    await onSubmit({ ...values, capitalId: !editing && values.inStockQuantity > 0 ? capitalId : undefined });
   };
   const handleInvalid = (formErrors: FieldErrors<ProductFormValues>) => {
     const firstMessage = Object.values(formErrors).map((error) => error?.message).find((message): message is string => typeof message === "string" && message !== "Supplier is required");
@@ -243,11 +251,24 @@ export function ProductFormModal({ open, product, onClose, onSubmit, serverError
         <div className="product-calculation-card grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-end rounded-[16px] max-[520px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]" aria-live="polite">
           <label className="product-calculation-field block min-w-0"><span>Per piece cost</span><Controller name="costPrice" control={control} render={({ field }) => <input {...field} className="floating-input h-11 w-full rounded-[14px] px-4 text-[10px] text-[var(--text-primary)] outline-none" type="text" inputMode="decimal" value={formatNumberInput(Number(field.value) || 0)} onChange={(event) => field.onChange(parseNumberInput(event.target.value))} aria-label="Per piece cost" />} />{errors.costPrice?.message && <small>{errors.costPrice.message}</small>}</label>
           <span className="product-calculation-symbol">×</span>
-          <label className="product-calculation-field block min-w-0"><span>Quantity</span><input {...register("inStockQuantity")} className="floating-input h-11 w-full rounded-[14px] px-4 text-[10px] text-[var(--text-primary)] outline-none" type="text" inputMode="numeric" value={formatNumberInput(quantity, 0)} onChange={(event) => setValue("inStockQuantity", Math.max(0, Math.floor(parseNumberInput(event.target.value))), { shouldDirty: true, shouldValidate: true })} aria-label="Quantity" />{errors.inStockQuantity?.message && <small>{errors.inStockQuantity.message}</small>}</label>
+          {editing ? <label className="product-calculation-field block min-w-0"><span>Current stock</span><input {...register("inStockQuantity", { valueAsNumber: true })} className="floating-input h-11 w-full rounded-[14px] px-4 text-[10px] text-[var(--text-primary)] outline-none" type="text" inputMode="numeric" value={formatNumberInput(quantity, 0)} readOnly aria-readonly="true" aria-label="Current stock" /><small className="block text-[10px] text-[var(--text-muted)]">Use Purchases → Edit purchase or Add stock to change inventory.</small></label> : <label className="product-calculation-field block min-w-0"><span>Quantity</span><Controller name="inStockQuantity" control={control} render={({ field }) => <input {...field} className="floating-input h-11 w-full rounded-[14px] px-4 text-[10px] text-[var(--text-primary)] outline-none" type="text" inputMode="numeric" value={formatNumberInput(Number(field.value) || 0, 0)} onChange={(event) => field.onChange(Math.max(0, Math.floor(parseNumberInput(event.target.value))))} aria-label="Quantity" />} />{errors.inStockQuantity?.message && <small>{errors.inStockQuantity.message}</small>}</label>}
           <span className="product-calculation-symbol">=</span>
           <label className="product-calculation-field block min-w-0 max-[520px]:col-span-full"><span>Total cost</span><input className="floating-input h-11 w-full rounded-[14px] px-4 text-[10px] font-semibold text-[var(--text-primary)] outline-none" value={formatCurrency(totalCost)} readOnly aria-label="Total cost" /></label>
         </div>
       </section>
+
+      {!editing && quantity > 0 && <section className="product-form-section sm:col-span-2 min-w-0" aria-labelledby="capital-title">
+        <h3 id="capital-title" className="m-0 mb-2 text-[12px] font-bold text-[var(--text-primary)]">Capital</h3>
+        <div className="product-capital-selection-row">
+          <div className="product-capital-selection-field">
+            <SelectField className="w-full" label="Capital account" value={capitalId} hint={!capitalId ? "Select a capital account" : undefined} onChange={(event) => { setCapitalId(event.target.value); setFormError(null); }}>
+              <option value="">Select capital account</option>
+              {capitalAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+            </SelectField>
+          </div>
+          {selectedCapital && <label className="product-modal-compact-label product-capital-selection-field block"><span className="mb-2 block text-[10px] font-semibold text-[var(--text-primary)]">Available amount</span><input className="floating-input h-11 w-full rounded-[14px] px-4 text-[10px] font-semibold text-[var(--text-primary)] outline-none" value={formatCurrency(selectedCapitalAvailable)} readOnly aria-label="Available capital amount" /></label>}
+        </div>
+      </section>}
 
       <section className="product-calculation-section mt-2 min-w-0 sm:col-span-2" aria-labelledby="profit-title">
         <h3 id="profit-title" className="m-0 mb-2 text-[12px] font-bold text-[var(--text-primary)]">Profit</h3>
