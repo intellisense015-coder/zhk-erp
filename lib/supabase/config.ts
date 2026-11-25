@@ -3,11 +3,7 @@ export type SupabaseEnv = {
   publishableKey: string
 }
 
-/**
- * Returns the browser-safe Supabase configuration when it has been provided.
- * Keeping this optional lets Solexa continue running in local-only mode during
- * the staged migration from localStorage to Supabase.
- */
+/** Returns the browser-safe Supabase configuration when it has been provided. */
 export function getSupabaseEnv(): SupabaseEnv | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
   const publishableKey = (
@@ -27,5 +23,5 @@ export function isSupabaseConfigured(): boolean {
 }
 
 export function isLocalOnlyMode(): boolean {
-  return !isSupabaseConfigured() && process.env.NODE_ENV !== 'production'
+  return false
 }

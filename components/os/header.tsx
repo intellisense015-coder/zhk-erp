@@ -99,7 +99,6 @@ export function OsHeader({
     setIsDarkMode(dark);
     document.documentElement.classList.toggle("dark", dark);
     document.documentElement.setAttribute("data-theme", theme);
-    window.localStorage.setItem("solexa-theme", theme);
     window.dispatchEvent(new CustomEvent("solexa-theme-change", { detail: theme }));
   };
 
@@ -131,8 +130,7 @@ export function OsHeader({
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const storedTheme = window.localStorage.getItem("solexa-theme");
-      const dark = storedTheme === "dark" || document.documentElement.classList.contains("dark") || document.documentElement.getAttribute("data-theme") === "dark";
+      const dark = document.documentElement.classList.contains("dark") || document.documentElement.getAttribute("data-theme") === "dark";
       setIsDarkMode(dark);
     }, 0);
     return () => window.clearTimeout(timer);

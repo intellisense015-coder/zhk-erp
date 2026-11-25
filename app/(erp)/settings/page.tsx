@@ -27,8 +27,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const storedTheme = window.localStorage.getItem("solexa-theme");
-      const nextTheme: ThemeMode = storedTheme === "dark" ? "dark" : "light";
+      const nextTheme: ThemeMode = document.documentElement.classList.contains("dark") || document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
       setTheme(nextTheme);
       applyTheme(nextTheme);
       if (isSupabaseConfigured()) {
@@ -91,7 +90,7 @@ export default function SettingsPage() {
     setNotification({ variant: "success", message: "Business profile saved securely." });
   };
 
-  const toggleTheme = () => { const next = theme === "dark" ? "light" : "dark"; setTheme(next); applyTheme(next); window.localStorage.setItem("solexa-theme", next); };
+  const toggleTheme = () => { const next = theme === "dark" ? "light" : "dark"; setTheme(next); applyTheme(next); };
 
   if (loading) return <SettingsPageSkeleton />;
 

@@ -13,5 +13,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: `(function(){try{["solexa-business-profile","solexa-pin-passed"].forEach(function(k){localStorage.removeItem(k);});var t=localStorage.getItem("solexa-theme");if(t==="dark"){document.documentElement.classList.add("dark");document.documentElement.setAttribute("data-theme","dark");}}catch(e){}})();` }} /></head><body><NumericInputGuard />{children}</body></html>;
+  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: `(function(){try{localStorage.clear();}catch(e){}})();` }} /></head><body><NumericInputGuard />{children}</body></html>;
 }

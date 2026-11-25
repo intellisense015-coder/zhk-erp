@@ -37,7 +37,6 @@ export function ThemeToggle() {
     const next = !isDark;
     document.documentElement.classList.toggle("dark", next);
     document.documentElement.setAttribute("data-theme", next ? "dark" : "light");
-    window.localStorage.setItem("solexa-theme", next ? "dark" : "light");
     window.dispatchEvent(new CustomEvent("solexa-theme-change", { detail: next ? "dark" : "light" }));
   };
   return <button type="button" className={`auth-theme-toggle ${isDark ? "is-dark" : "is-light"}`} onClick={toggle} aria-pressed={isDark} aria-label={`Use ${isDark ? "light" : "dark"} theme`}><span className="theme-toggle-handle" aria-hidden="true">{isDark ? <Moon size={15} /> : <Sun size={15} />}</span><span className="theme-toggle-label">{isDark ? "Dark" : "Light"}</span></button>;

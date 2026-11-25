@@ -3,37 +3,16 @@
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getCapitalSummary, productBrands, roundMoney, type CapitalAccount, type CapitalEntry, type Customer, type Expense, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from "./erp-data";
+import { getCapitalSummary, roundMoney, type CapitalAccount, type CapitalEntry, type Customer, type Expense, type Product, type SaleLineItem, type Supplier, type SupplierPayment, type Transaction } from "./erp-data";
 import { createInvoiceNumber } from "./invoice-utils";
 import type { ExchangeFormValues, ProductFormValues, PurchaseFormValues, SaleFormValues } from "./validations";
 import type { RemoteResource } from "./supabase/erp-read";
 import { createSupabaseBrowserClient } from "./supabase/browser";
-import { isLocalOnlyMode, isSupabaseConfigured } from "./supabase/config";
+import { isSupabaseConfigured } from "./supabase/config";
 import { erpQueryKeys, fetchRemoteResource, remoteResources } from "./supabase/erp-query";
 
-// v2 intentionally starts with a clean workspace so the former demo snapshot
-// cannot reappear as real business data. The local namespace is retained only
-// for development/staging migration mode; configured Supabase sessions do not
-// persist ERP records in browser storage.
-const STORAGE_KEY = "solexa-erp-data-v2";
-export function clearLocalErpSnapshots() {
-  if (typeof window === "undefined") return;
-
-  const keysToRemove: string[] = [];
-  for (let index = 0; index < window.localStorage.length; index += 1) {
-    const key = window.localStorage.key(index);
-    if (typeof key === "string" && (key === STORAGE_KEY || key.startsWith(`${STORAGE_KEY}:`))) {
-      keysToRemove.push(key);
-    }
-  }
-
-  keysToRemove.forEach((key) => window.localStorage.removeItem(key));
-}
-
-function persistLocalStore(next: StoreData) {
-  if (!isLocalOnlyMode()) return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-}
+// ERP records are remote-only. The provider keeps a query-backed in-memory
+// view for rendering, but never persists business data in browser storage.
 type StoreData = { products: Product[]; transactions: Transaction[]; customers: Customer[]; suppliers: Supplier[]; supplierPayments: SupplierPayment[]; expenses: Expense[]; expenseCategories: string[]; capitalAccounts: CapitalAccount[]; capitalEntries: CapitalEntry[] };
 type ProductSubmitValues = ProductFormValues & { capitalId?: string };
 type ExpenseFormValues = Omit<Expense, "id" | "date" | "month" | "createdAt">;
@@ -97,14 +76,6 @@ function makeId(prefix: string) {
   return `${prefix}-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 }
 
-function normalizeProductName(product: Partial<Product>) {
-  const brand = productBrands.find((item) => item.value === product.brand);
-  const model = product.model?.trim();
-  if (!brand || brand.value === "other" || !model) return product.name ?? "Unnamed product";
-  const cleanModel = model.replace(new RegExp(`^${brand.label}\\s+`, "i"), "");
-  return `${brand.label} ${cleanModel}`.trim();
-}
-
 function getDateParts() {
   const date = new Date();
   const isoDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -155,65 +126,14 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
 
   useEffect(() => {
     let active = true;
-    const timer = window.setTimeout(async () => {
-      let localData = emptyStore;
+    const timer = window.setTimeout(() => {
+      if (!active) return;
       if (configured) {
         setWorkspaceId(requestedWorkspaceId);
         setSupabase(createSupabaseBrowserClient());
         return;
       }
-      if (isLocalOnlyMode()) {
-        try {
-          const stored = window.localStorage.getItem(STORAGE_KEY);
-          if (stored) {
-            const parsed = JSON.parse(stored) as Partial<StoreData>;
-          const products = Array.isArray(parsed.products) ? parsed.products.map((product) => { const normalized = { ...product, brand: product.brand ?? "other", model: product.model ?? product.name, color: product.color?.trim() || "Unspecified", vendorName: product.vendorName ?? "Unassigned" }; return { ...normalized, name: normalizeProductName(normalized) }; }) : [];
-          const customers = Array.isArray(parsed.customers) ? (parsed.customers as Array<Customer & { accountNumber?: string }>).map((customer, index, source) => ({ ...customer, code: makeUniqueCustomerCode(customer.code ?? customer.accountNumber ?? `CUST-${String(index + 1).padStart(3, "0")}`, source.slice(0, index).map((item) => ({ ...item, code: item.code ?? item.accountNumber ?? "" })) as Customer[]) })) : [];
-          const parsedSuppliers = Array.isArray(parsed.suppliers) ? (parsed.suppliers as Array<Partial<Supplier>>).map((supplier) => ({ id: supplier.id ?? makeId("supplier"), name: supplier.name ?? "Unnamed supplier", contactNumber: supplier.contactNumber ?? "", company: supplier.company ?? "", cnicNumber: supplier.cnicNumber ?? "", openingBalance: typeof supplier.openingBalance === "number" && Number.isFinite(supplier.openingBalance) ? Math.max(supplier.openingBalance, 0) : 0, createdAt: supplier.createdAt ?? new Date().toISOString() })) : [];
-          const rawTransactions = Array.isArray(parsed.transactions) ? parsed.transactions.map((transaction) => ({ ...transaction, customerCode: transaction.customerCode ?? transaction.customerAccountNumber, items: transaction.items?.map((item) => ({ ...item, discount: item.discount ?? 0 })) })) : [];
-          const suppliers = [...parsedSuppliers];
-          const transactions = rawTransactions.map((transaction) => {
-            if (transaction.type !== "purchase") return transaction;
-            const existing = suppliers.find((supplier) => supplier.id === transaction.supplierId || supplier.name.toLowerCase() === transaction.party.toLowerCase());
-            if (existing) return { ...transaction, supplierId: existing.id };
-            const supplier = { id: transaction.supplierId ?? makeId("supplier"), name: transaction.party, contactNumber: transaction.supplierContactNumber ?? "", company: transaction.supplierCompany ?? "", cnicNumber: "", openingBalance: 0, createdAt: new Date().toISOString() };
-            suppliers.push(supplier);
-            return { ...transaction, supplierId: supplier.id };
-          });
-          // Older inventory entries stored stock and its supplier on the product,
-          // but did not create a purchase transaction. Import that stock once so
-          // supplier purchase totals remain accurate after the data model change.
-          const migratedPurchases: Transaction[] = products.flatMap((product) => {
-            const vendorName = product.vendorName?.trim();
-            const supplier = suppliers.find((item) => item.name.trim().toLowerCase() === vendorName?.toLowerCase());
-            const received = Number(product.received ?? product.inStockQuantity ?? 0);
-            const unitCost = Number(product.costPrice ?? 0);
-            if (!supplier || !vendorName || vendorName.toLowerCase() === "unassigned" || received <= 0 || unitCost <= 0) return [];
-            const recordedQuantity = transactions
-              .filter((transaction) => transaction.type === "purchase" && transaction.productId === product.id && transaction.supplierId === supplier.id)
-              .reduce((sum, transaction) => sum + transaction.quantity, 0);
-            const quantity = Math.max(received - recordedQuantity, 0);
-            if (!quantity) return [];
-            const total = quantity * unitCost;
-            const createdAt = new Date().toISOString();
-            const { date, month } = getDateParts();
-            return [{ id: makeId("purchase"), type: "purchase", source: "supplier", name: product.name, productId: product.id, unitCost, party: supplier.name, supplierId: supplier.id, supplierContactNumber: supplier.contactNumber, supplierCompany: supplier.company, quantity, amount: total, paidAmount: 0, outstandingAmount: total, time: "Imported from inventory", createdAt, date, month }];
-          });
-          const nextTransactions = [...migratedPurchases, ...transactions];
-          const expenses = Array.isArray(parsed.expenses) ? parsed.expenses : [];
-          const expenseCategories = Array.isArray(parsed.expenseCategories) ? Array.from(new Set(parsed.expenseCategories.filter((category): category is string => typeof category === "string" && Boolean(category.trim())).map((category) => category.trim()))) : [];
-          const capitalAccounts = Array.isArray(parsed.capitalAccounts) ? parsed.capitalAccounts : [];
-          const capitalEntries = Array.isArray(parsed.capitalEntries) ? parsed.capitalEntries : [];
-          const nextData = { products, transactions: nextTransactions, customers, suppliers, supplierPayments: Array.isArray(parsed.supplierPayments) ? parsed.supplierPayments : [], expenses, expenseCategories, capitalAccounts, capitalEntries };
-            localData = nextData;
-          }
-        } catch {
-          window.localStorage.removeItem(STORAGE_KEY);
-        }
-      }
-
-      if (!active) return;
-      setData(localData);
+      setData(emptyStore);
       setLocalHydrated(true);
     }, 0);
     return () => { active = false; window.clearTimeout(timer); };
@@ -223,7 +143,6 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
 
   const commit = (next: StoreData) => {
     setData(next);
-    persistLocalStore(next);
   };
 
   const normalizeContact = (value: string) => value.replace(/\D/g, "");
@@ -236,7 +155,6 @@ export function ErpStoreProvider({ children, workspaceId: requestedWorkspaceId =
     if (!configured) return { ok: true };
     if (!workspaceId || !supabase) return { ok: false, message: "Your workspace session is missing. Please sign in again." };
     await Promise.all(resources.map((resource) => queryClient.invalidateQueries({ queryKey: erpQueryKeys.resource(workspaceId, resource) })));
-    clearLocalErpSnapshots();
     return { ok: true };
   }, [configured, queryClient, supabase, workspaceId]);
 

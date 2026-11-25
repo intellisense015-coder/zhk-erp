@@ -51,18 +51,19 @@ export default function MfaPage() {
       setError("We could not verify your Microsoft Authenticator status. Please sign in again.");
         return;
       }
+      const verifiedTotp = factors.totp.find((factor) => factor.status === "verified");
+      if (!verifiedTotp) {
+        setMode("enroll");
+        return;
+      }
+
       if (assurance.currentLevel === "aal2") {
         router.replace(nextPath);
         return;
       }
 
-      const verifiedTotp = factors.totp.find((factor) => factor.status === "verified");
-      if (verifiedTotp) {
-        setFactorId(verifiedTotp.id);
-        setMode("challenge");
-      } else {
-        setMode("enroll");
-      }
+      setFactorId(verifiedTotp.id);
+      setMode("challenge");
     };
 
     void loadMfaState();

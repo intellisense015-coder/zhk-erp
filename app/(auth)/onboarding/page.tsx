@@ -81,7 +81,13 @@ export default function OnboardingPage() {
         router.replace("/login");
         return;
       }
-      if (assurance.currentLevel !== "aal2") {
+      const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
+      if (factorsError || !factors) {
+        router.replace("/login");
+        return;
+      }
+      const hasVerifiedTotp = factors.totp.some((factor) => factor.status === "verified");
+      if (!hasVerifiedTotp || assurance.currentLevel !== "aal2") {
         router.replace("/mfa");
         return;
       }

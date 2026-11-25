@@ -49,15 +49,19 @@ export default function LoginPage() {
 
     const nextPath = safeNextPath(new URL(window.location.href).searchParams.get("next"));
     const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (assuranceError || !assurance) {
+    const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
+    if (assuranceError || factorsError || !assurance || !factors) {
       setAuthError("We could not verify your authenticator status. Please try again.");
       return;
     }
 
+    const hasVerifiedTotp = factors.totp.some((factor) => factor.status === "verified");
     // Password authentication only establishes AAL1. The MFA page decides
     // whether this account needs a new QR enrollment or an existing-factor
-    // challenge before any ERP route can be opened.
-    if (assurance.currentLevel !== "aal2") {
+    // challenge before any ERP route can be opened. Check the factor list as
+    // well because an existing session can retain a stale AAL2 claim after an
+    // administrator removes the user's authenticator factor.
+    if (!hasVerifiedTotp || assurance.currentLevel !== "aal2") {
       router.replace(`/mfa?next=${encodeURIComponent(nextPath)}`);
       return;
     }

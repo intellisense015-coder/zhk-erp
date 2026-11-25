@@ -6,7 +6,7 @@ import { Toaster } from "sileo";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { OsHeader } from "../os/header";
 import { OsSidebar } from "../os/sidebar";
-import { clearLocalErpSnapshots, ErpStoreProvider } from "../../lib/erp-store";
+import { ErpStoreProvider } from "../../lib/erp-store";
 import { defaultBusinessProfile, getOwnerDisplayName, readBusinessProfile, type BusinessProfile } from "../../lib/business-profile";
 import { createSupabaseBrowserClient } from "../../lib/supabase/browser";
 import { isLocalOnlyMode, isSupabaseConfigured } from "../../lib/supabase/config";
@@ -176,7 +176,6 @@ export function ErpShell({ children }: { children: ReactNode }) {
     void (async () => {
       const supabase = createSupabaseBrowserClient();
       await supabase?.auth.signOut();
-      clearLocalErpSnapshots();
       router.replace("/login");
     })();
   };
